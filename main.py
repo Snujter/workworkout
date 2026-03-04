@@ -37,6 +37,14 @@ class WorkoutTUI:
         with open(DATA_FILE, "w") as f:
             json.dump(self.data, f, indent=4)
 
+    def format_time(self, seconds):
+        """Converts seconds into H:M:S format"""
+        if seconds < 0: return "00h 00m 00s"
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        s = seconds % 60
+        return f"{h:02d}h {m:02d}m {s:02d}s"
+
     def background_timer(self):
         while self.running:
             elapsed = time.time() - self.last_alert_time
@@ -98,20 +106,24 @@ class WorkoutTUI:
             # UI Header
             stdscr.addstr(1, w // 2 - 10, "WORKOUT REMINDER", curses.A_BOLD)
 
-            # Timer Status
+            # Timer Status with H/M/S Formatting
             interval_sec = self.data["settings"]["interval_minutes"] * 60
             time_left = int(interval_sec - (time.time() - self.last_alert_time))
-            status = f"Next beep in: {max(0, time_left)}s | Interval: {self.data['settings']['interval_minutes']}m"
+
+            status = f"Next beep in: {self.format_time(time_left)}"
+            cfg = f"Interval Set: {self.format_time(interval_sec)}"
+
             stdscr.addstr(3, w // 2 - len(status) // 2, status, curses.color_pair(1))
+            stdscr.addstr(4, w // 2 - len(cfg) // 2, cfg)
 
             if self.alert_triggered:
                 alert_msg = "!! TIME TO WORK OUT !! (Press 'c' to silence)"
-                stdscr.addstr(5, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(2) | curses.A_BLINK)
+                stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(2) | curses.A_BLINK)
 
-            # Render Menu
+            # Render Menu (Y-offset adjusted to 9 to account for extra timer lines)
             for idx, item in enumerate(menu):
                 x = w // 2 - 12
-                y = 8 + idx
+                y = 9 + idx
                 if idx == current_row:
                     stdscr.addstr(y, x, f" > {item} ", curses.color_pair(3))
                 else:
