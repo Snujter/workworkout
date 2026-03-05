@@ -39,6 +39,92 @@ class WorkoutManager:
             "history": self.history
         }
 
+class BaseTable:
+    # Visual Theme Constants
+    BORDER_TOP_LEFT = "┌"
+    BORDER_TOP_RIGHT = "┐"
+    BORDER_BOT_LEFT = "└"
+    BORDER_BOT_RIGHT = "┘"
+    BORDER_SIDE = "│"
+    BORDER_HORIZ = "─"
+    DIVIDER = "│"
+
+    def __init__(self, col_widths, headers):
+        self.col_widths = col_widths
+        self.headers = headers
+        # Total width = borders + internal padding/dividers + sum of columns
+        self.total_width = sum(col_widths) + (len(col_widths) * 2) + (len(col_widths) - 1) + 2
+
+    def draw_border(self, stdscr, y, x, pos="top"):
+        left = self.BORDER_TOP_LEFT if pos == "top" else self.BORDER_BOT_LEFT
+        right = self.BORDER_TOP_RIGHT if pos == "top" else self.BORDER_BOT_RIGHT
+        stdscr.addstr(y, x, left + (self.BORDER_HORIZ * (self.total_width - 2)) + right)
+
+    def render_row(self, stdscr, y, x, cells, color_pair=None):
+        row_str = ""
+        for i, cell in enumerate(cells):
+            width = self.col_widths[i]
+            # Truncate and pad
+            content = str(cell)[:width]
+            row_str += f" {content:<{width}} "
+            if i < len(cells) - 1:
+                row_str += self.DIVIDER
+
+        if color_pair:
+            stdscr.attron(color_pair)
+        stdscr.addstr(y, x, f"{self.BORDER_SIDE}{row_str}{self.BORDER_SIDE}")
+        if color_pair:
+            stdscr.attroff(color_pair)
+
+    def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows):
+        start_x = max(0, (w - self.total_width) // 2)
+
+        # Top Border and Header
+        self.draw_border(stdscr, y, start_x, "top")
+        self.render_row(stdscr, y + 1, start_x, self.headers, curses.color_pair(1))
+
+        # Body
+        visible_items = data_rows[scroll_offset: scroll_offset + max_rows]
+        for i, row in enumerate(visible_items):
+            self.render_row(stdscr, y + 2 + i, start_x, row)
+
+        # Bottom Border
+        footer_y = y + 2 + len(visible_items)
+        self.draw_border(stdscr, footer_y, start_x, "bot")
+
+        return footer_y
+
+class WorkoutTable(BaseTable):
+    COL_NAME_WIDTH = 25
+    COL_COUNT_WIDTH = 10
+    MAX_VISIBLE = 5
+
+    def __init__(self):
+        # Initialize the base class with Workout-specific widths and headers
+        super().__init__(
+            col_widths=[self.COL_NAME_WIDTH, self.COL_COUNT_WIDTH],
+            headers=["Workout", "Count"]
+        )
+
+    def draw(self, stdscr, y, w, history_dict, scroll_offset):
+        # Convert dictionary to a list of lists for the generic renderer
+        rows = [[name, count] for name, count in history_dict.items()]
+
+        last_y = self.render(
+            stdscr, y, w,
+            data_rows=rows,
+            scroll_offset=scroll_offset,
+            max_rows=self.MAX_VISIBLE
+        )
+
+        # Optional: Add scroll indicator centered on this specific table width
+        if len(rows) > self.MAX_VISIBLE:
+            start_x = max(0, (w - self.total_width) // 2)
+            msg = f" {scroll_offset + 1}-{scroll_offset + min(len(rows), self.MAX_VISIBLE)} of {len(rows)} "
+            stdscr.addstr(last_y, start_x + (self.total_width - len(msg)) // 2, msg, curses.A_REVERSE)
+
+        return last_y
+
 class WorkoutTUI:
     # Class properties
     manager: WorkoutManager
@@ -52,6 +138,7 @@ class WorkoutTUI:
         self.running = True
         self.last_alert_time = time.time()
         self.alert_triggered = False
+        self.table = WorkoutTable()
         self.scroll_offset = 0
 
         # Initialize Data Objects (will be populated by load_data)
@@ -184,52 +271,13 @@ class WorkoutTUI:
                 stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(2) | curses.A_BLINK)
 
             # --- Progress Table ---
+            stdscr.addstr(6, w // 2 - 10, "TODAY'S PROGRESS", curses.A_UNDERLINE)
+
+            # Get history and pass it to the specific table component
             today = datetime.now().strftime("%Y-%m-%d")
-            history = list(self.manager.history.get(today, {}).items())
+            history = self.manager.history.get(today, {})
 
-            table_y = 6
-            max_visible_rows = 5
-            # Define exact column widths
-            col1_w = 25  # Workout name
-            col2_w = 10  # Reps/Count
-            # Total width: 1(border) + 1(space) + col1 + 3(space|space) + col2 + 1(space) + 1(border) = 42
-            table_w = col1_w + col2_w + 7
-            start_x = max(0, (w - table_w) // 2)
-
-            # Top Border
-            stdscr.addstr(table_y, start_x, "┌" + "─" * (table_w - 2) + "┐")
-
-            # Header Row - Fixed padding
-            # Format: "| Workout (25) | Reps (10) |"
-            header_str = f" {'Workout':<{col1_w}} │ {'Count':<{col2_w}} "
-            stdscr.attron(curses.color_pair(1))
-            stdscr.addstr(table_y + 1, start_x, "│" + header_str + "│")
-            stdscr.attroff(curses.color_pair(1))
-
-            if not history:
-                empty_msg = "No reps yet!".center(table_w - 2)
-                stdscr.addstr(table_y + 2, start_x, "│" + empty_msg + "│")
-                table_end_y = table_y + 3
-                visible_items = []
-            else:
-                visible_items = history[self.scroll_offset: self.scroll_offset + max_visible_rows]
-
-                for i, (name, count) in enumerate(visible_items):
-                    row_y = table_y + 2 + i
-                    # Ensure name is truncated if too long, and count is stringified
-                    clean_name = name[:col1_w]
-                    row_content = f" {clean_name:<{col1_w}} │ {str(count):<{col2_w}} "
-                    stdscr.addstr(row_y, start_x, "│" + row_content + "│")
-
-                table_end_y = table_y + 2 + len(visible_items)
-
-            # Bottom Border
-            stdscr.addstr(table_end_y, start_x, "└" + "─" * (table_w - 2) + "┘")
-
-            # Scroll indicator stays centered relative to the new table_w
-            if len(history) > max_visible_rows:
-                scroll_msg = f" {self.scroll_offset + 1}-{self.scroll_offset + len(visible_items)} of {len(history)} "
-                stdscr.addstr(table_end_y, start_x + (table_w - len(scroll_msg)) // 2, scroll_msg, curses.A_REVERSE)
+            table_end_y = self.table.draw(stdscr, 7, w, history, self.scroll_offset)
 
             menu_start_y = table_end_y + 2
 
