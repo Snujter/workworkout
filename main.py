@@ -46,11 +46,13 @@ class WorkoutTUI:
     running: bool
     last_alert_time: float
     alert_triggered: bool
+    scroll_offset: int  # Added to track table position
 
     def __init__(self):# Initialize state
         self.running = True
         self.last_alert_time = time.time()
         self.alert_triggered = False
+        self.scroll_offset = 0
 
         # Initialize Data Objects (will be populated by load_data)
         self.settings = Settings()
@@ -143,7 +145,7 @@ class WorkoutTUI:
         # Curses Setup
         curses.curs_set(0)
         curses.start_color()
-        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)
         curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_RED)
         curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_WHITE)
 
@@ -183,26 +185,53 @@ class WorkoutTUI:
 
             # --- Progress Table ---
             today = datetime.now().strftime("%Y-%m-%d")
-            history = self.manager.history.get(today, {})
+            history = list(self.manager.history.get(today, {}).items())
 
             table_y = 6
-            stdscr.addstr(table_y, w // 2 - 10, "TODAY'S PROGRESS", curses.A_UNDERLINE)
+            max_visible_rows = 5
+            # Define exact column widths
+            col1_w = 25  # Workout name
+            col2_w = 10  # Reps/Count
+            # Total width: 1(border) + 1(space) + col1 + 3(space|space) + col2 + 1(space) + 1(border) = 42
+            table_w = col1_w + col2_w + 7
+            start_x = max(0, (w - table_w) // 2)
+
+            # Top Border
+            stdscr.addstr(table_y, start_x, "┌" + "─" * (table_w - 2) + "┐")
+
+            # Header Row - Fixed padding
+            # Format: "| Workout (25) | Reps (10) |"
+            header_str = f" {'Workout':<{col1_w}} │ {'Count':<{col2_w}} "
+            stdscr.attron(curses.color_pair(1))
+            stdscr.addstr(table_y + 1, start_x, "│" + header_str + "│")
+            stdscr.attroff(curses.color_pair(1))
 
             if not history:
-                stdscr.addstr(table_y + 1, w // 2 - 7, "No reps yet!", curses.color_pair(1))
+                empty_msg = "No reps yet!".center(table_w - 2)
+                stdscr.addstr(table_y + 2, start_x, "│" + empty_msg + "│")
+                table_end_y = table_y + 3
+                visible_items = []
             else:
-                # Header
-                stdscr.addstr(table_y + 1, w // 2 - 12, f"{'Workout':<15} | {'Count':<5}")
-                stdscr.addstr(table_y + 2, w // 2 - 12, "-" * 23)
+                visible_items = history[self.scroll_offset: self.scroll_offset + max_visible_rows]
 
-                # Rows
-                for i, (name, count) in enumerate(history.items()):
-                    row_str = f"{name[:15]:<15} | {count:<5}"
-                    stdscr.addstr(table_y + 3 + i, w // 2 - 12, row_str)
+                for i, (name, count) in enumerate(visible_items):
+                    row_y = table_y + 2 + i
+                    # Ensure name is truncated if too long, and count is stringified
+                    clean_name = name[:col1_w]
+                    row_content = f" {clean_name:<{col1_w}} │ {str(count):<{col2_w}} "
+                    stdscr.addstr(row_y, start_x, "│" + row_content + "│")
 
-            # Adjust Menu Y-offset to start below the table
-            # We calculate offset based on how many items are in the history
-            menu_start_y = table_y + 4 + max(1, len(history))
+                table_end_y = table_y + 2 + len(visible_items)
+
+            # Bottom Border
+            stdscr.addstr(table_end_y, start_x, "└" + "─" * (table_w - 2) + "┘")
+
+            # Scroll indicator stays centered relative to the new table_w
+            if len(history) > max_visible_rows:
+                scroll_msg = f" {self.scroll_offset + 1}-{self.scroll_offset + len(visible_items)} of {len(history)} "
+                stdscr.addstr(table_end_y, start_x + (table_w - len(scroll_msg)) // 2, scroll_msg, curses.A_REVERSE)
+
+            menu_start_y = table_end_y + 2
 
             # Render Menu (Y-offset adjusted to 9 to account for extra timer lines)
             for idx, item in enumerate(menu):
