@@ -152,7 +152,12 @@ class WorkoutTUI:
 
         threading.Thread(target=self.background_timer, daemon=True).start()
 
-        menu = ["Log Activity", "Manage Workouts", "View Today's Stats", "Change Interval", "Exit"]
+        menu = [
+            "Log Activity",
+            "Manage Workouts",
+            "Change Interval",
+            "Exit"
+        ]
         current_row = 0
 
         while self.running:
@@ -176,10 +181,33 @@ class WorkoutTUI:
                 alert_msg = "!! TIME TO WORK OUT !! (Press 'c' to silence)"
                 stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(2) | curses.A_BLINK)
 
+            # --- Progress Table ---
+            today = datetime.now().strftime("%Y-%m-%d")
+            history = self.manager.history.get(today, {})
+
+            table_y = 6
+            stdscr.addstr(table_y, w // 2 - 10, "TODAY'S PROGRESS", curses.A_UNDERLINE)
+
+            if not history:
+                stdscr.addstr(table_y + 1, w // 2 - 7, "No reps yet!", curses.color_pair(1))
+            else:
+                # Header
+                stdscr.addstr(table_y + 1, w // 2 - 12, f"{'Workout':<15} | {'Count':<5}")
+                stdscr.addstr(table_y + 2, w // 2 - 12, "-" * 23)
+
+                # Rows
+                for i, (name, count) in enumerate(history.items()):
+                    row_str = f"{name[:15]:<15} | {count:<5}"
+                    stdscr.addstr(table_y + 3 + i, w // 2 - 12, row_str)
+
+            # Adjust Menu Y-offset to start below the table
+            # We calculate offset based on how many items are in the history
+            menu_start_y = table_y + 4 + max(1, len(history))
+
             # Render Menu (Y-offset adjusted to 9 to account for extra timer lines)
             for idx, item in enumerate(menu):
                 x = w // 2 - 12
-                y = 9 + idx
+                y = menu_start_y + idx
                 if idx == current_row:
                     stdscr.addstr(y, x, f" > {item} ", curses.color_pair(3))
                 else:
@@ -222,19 +250,13 @@ class WorkoutTUI:
                         self.manager.remove_workout_type(rem_w)
                     self.save_data()
 
-                elif current_row == 2:  # Stats
-                    today = datetime.now().strftime("%Y-%m-%d")
-                    history = self.manager.history.get(today, {})
-                    stats_str = ", ".join([f"{k}: {v}" for k, v in history.items()]) if history else "No progress yet."
-                    self.get_input(stdscr, f"Today: {stats_str} (Enter to back)")
-
-                elif current_row == 3:  # Interval
+                elif current_row == 2:  # Change Interval
                     val = self.get_input(stdscr, "New interval (mins): ")
                     if val.isdigit():
                         self.settings.interval_minutes = int(val)
                         self.save_data()
 
-                elif current_row == 4:  # Exit
+                elif current_row == 3:  # Exit
                     self.running = False
 
             time.sleep(0.05)
