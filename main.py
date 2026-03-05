@@ -7,35 +7,91 @@ from datetime import datetime
 
 DATA_FILE = "workout_data.json"
 
+class Settings:
+    def __init__(self, interval_minutes=30):
+        self.interval_minutes = interval_minutes
+
+    def to_dict(self):
+        return {"interval_minutes": self.interval_minutes}
+
+class WorkoutManager:
+    def __init__(self, workouts=None, history=None):
+        self.workouts = workouts or ["pushups", "plank", "squats"]
+        self.history = history or {}
+
+    def add_workout_type(self, name):
+        if name and name not in self.workouts:
+            self.workouts.append(name)
+
+    def remove_workout_type(self, name):
+        if name in self.workouts:
+            self.workouts.remove(name)
+
+    def log_progress(self, name, count):
+        today = datetime.now().strftime("%Y-%m-%d")
+        if today not in self.history:
+            self.history[today] = {}
+        self.history[today][name] = self.history[today].get(name, 0) + count
+
+    def to_dict(self):
+        return {
+            "workouts": self.workouts,
+            "history": self.history
+        }
 
 class WorkoutTUI:
-    def __init__(self):
-        self.load_data()
+    # Class properties
+    manager: WorkoutManager
+    settings: Settings
+    running: bool
+    last_alert_time: float
+    alert_triggered: bool
+
+    def __init__(self):# Initialize state
         self.running = True
         self.last_alert_time = time.time()
         self.alert_triggered = False
 
+        # Initialize Data Objects (will be populated by load_data)
+        self.settings = Settings()
+        self.manager = WorkoutManager()
+
+        # Load persisted data
+        self.load_data()
+
     def load_data(self):
+        """Populates existing settings and manager objects from JSON"""
         if os.path.exists(DATA_FILE):
             try:
                 with open(DATA_FILE, "r") as f:
-                    self.data = json.load(f)
-            except:
-                self.setup_default_data()
-        else:
-            self.setup_default_data()
+                    raw = json.load(f)
+                    # Update existing objects instead of re-instantiating
+                    if "settings" in raw:
+                        self.settings.interval_minutes = raw["settings"].get("interval_minutes", 30)
 
-    def setup_default_data(self):
-        self.data = {
-            "settings": {"interval_minutes": 30},
-            "workouts": ["pushups", "plank", "squats"],
-            "history": {}
-        }
+                    if "workouts" in raw:
+                        self.manager.workouts = raw["workouts"]
+
+                    if "history" in raw:
+                        self.manager.history = raw["history"]
+            except (json.JSONDecodeError, IOError):
+                # Fallback to defaults already set in __init__
+                self.save_data()
+        else:
+            self.save_data()
+
+    def setup_defaults(self):
+        self.settings = Settings()
+        self.manager = WorkoutManager()
         self.save_data()
 
     def save_data(self):
+        data = {
+            "settings": self.settings.to_dict(),
+            **self.manager.to_dict()
+        }
         with open(DATA_FILE, "w") as f:
-            json.dump(self.data, f, indent=4)
+            json.dump(data, f, indent=4)
 
     def format_time(self, seconds):
         """Converts seconds into H:M:S format"""
@@ -48,7 +104,7 @@ class WorkoutTUI:
     def background_timer(self):
         while self.running:
             elapsed = time.time() - self.last_alert_time
-            threshold = self.data["settings"]["interval_minutes"] * 60
+            threshold = self.settings.interval_minutes * 60
             if elapsed >= threshold:
                 self.alert_triggered = True
                 print("\a", end="", flush=True)
@@ -107,7 +163,7 @@ class WorkoutTUI:
             stdscr.addstr(1, w // 2 - 10, "WORKOUT REMINDER", curses.A_BOLD)
 
             # Timer Status with H/M/S Formatting
-            interval_sec = self.data["settings"]["interval_minutes"] * 60
+            interval_sec = self.settings.interval_minutes * 60
             time_left = int(interval_sec - (time.time() - self.last_alert_time))
 
             status = f"Next beep in: {self.format_time(time_left)}"
@@ -145,45 +201,37 @@ class WorkoutTUI:
                 self.alert_triggered = False
             elif key in [curses.KEY_ENTER, 10, 13]:
                 if current_row == 0:  # Log Activity
-                    # Show available workouts first
-                    workouts_str = f"Available: {', '.join(self.data['workouts'])}"
-                    stdscr.addstr(h - 3, 2, workouts_str[:w - 4])
-
+                    stdscr.addstr(h - 3, 2, f"Available: {', '.join(self.manager.workouts)}")
                     name = self.get_input(stdscr, "Workout Name: ")
-                    if name in self.data["workouts"]:
+                    if name in self.manager.workouts:
                         count = self.get_input(stdscr, "Amount (reps/secs): ")
                         if count.isdigit():
-                            today = datetime.now().strftime("%Y-%m-%d")
-                            if today not in self.data["history"]: self.data["history"][today] = {}
-                            self.data["history"][today][name] = self.data["history"][today].get(name, 0) + int(count)
+                            self.manager.log_progress(name, int(count))
                             self.save_data()
                             self.get_input(stdscr, "Logged! Press Enter...")
-                    else:
-                        if name:  # Only show error if they actually typed something
-                            self.get_input(stdscr, f"'{name}' not found. Press Enter...")
+                    elif name:
+                        self.get_input(stdscr, f"'{name}' not found. Press Enter...")
 
-                elif current_row == 1:  # Manage
+                elif current_row == 1:  # Manage Workouts
                     action = self.get_input(stdscr, "(A)dd or (D)elete? ").lower()
                     if action == 'a':
                         new_w = self.get_input(stdscr, "New workout name: ")
-                        if new_w and new_w not in self.data["workouts"]:
-                            self.data["workouts"].append(new_w)
+                        self.manager.add_workout_type(new_w)
                     elif action == 'd':
                         rem_w = self.get_input(stdscr, "Name to remove: ")
-                        if rem_w in self.data["workouts"]:
-                            self.data["workouts"].remove(rem_w)
+                        self.manager.remove_workout_type(rem_w)
                     self.save_data()
 
                 elif current_row == 2:  # Stats
                     today = datetime.now().strftime("%Y-%m-%d")
-                    history = self.data["history"].get(today, {})
+                    history = self.manager.history.get(today, {})
                     stats_str = ", ".join([f"{k}: {v}" for k, v in history.items()]) if history else "No progress yet."
                     self.get_input(stdscr, f"Today: {stats_str} (Enter to back)")
 
                 elif current_row == 3:  # Interval
                     val = self.get_input(stdscr, "New interval (mins): ")
                     if val.isdigit():
-                        self.data["settings"]["interval_minutes"] = int(val)
+                        self.settings.interval_minutes = int(val)
                         self.save_data()
 
                 elif current_row == 4:  # Exit
