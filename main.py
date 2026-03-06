@@ -4,137 +4,23 @@ import json
 import threading
 import os
 from datetime import datetime
+from modules.models import Settings, WorkoutManager
+from modules.ui_components import WorkoutTable
 
 DATA_FILE = "workout_data.json"
 
-class Settings:
-    def __init__(self, interval_minutes=30):
-        self.interval_minutes = interval_minutes
-
-    def to_dict(self):
-        return {"interval_minutes": self.interval_minutes}
-
-class WorkoutManager:
-    def __init__(self, workouts=None, history=None):
-        self.workouts = workouts or ["pushups", "plank", "squats"]
-        self.history = history or {}
-
-    def add_workout_type(self, name):
-        if name and name not in self.workouts:
-            self.workouts.append(name)
-
-    def remove_workout_type(self, name):
-        if name in self.workouts:
-            self.workouts.remove(name)
-
-    def log_progress(self, name, count):
-        today = datetime.now().strftime("%Y-%m-%d")
-        if today not in self.history:
-            self.history[today] = {}
-        self.history[today][name] = self.history[today].get(name, 0) + count
-
-    def to_dict(self):
-        return {
-            "workouts": self.workouts,
-            "history": self.history
-        }
-
-class BaseTable:
-    # Visual Theme Constants
-    BORDER_TOP_LEFT = "┌"
-    BORDER_TOP_RIGHT = "┐"
-    BORDER_BOT_LEFT = "└"
-    BORDER_BOT_RIGHT = "┘"
-    BORDER_SIDE = "│"
-    BORDER_HORIZ = "─"
-    DIVIDER = "│"
-
-    def __init__(self, col_widths, headers):
-        self.col_widths = col_widths
-        self.headers = headers
-        # Total width = borders + internal padding/dividers + sum of columns
-        self.total_width = sum(col_widths) + (len(col_widths) * 2) + (len(col_widths) - 1) + 2
-
-    def draw_border(self, stdscr, y, x, pos="top"):
-        left = self.BORDER_TOP_LEFT if pos == "top" else self.BORDER_BOT_LEFT
-        right = self.BORDER_TOP_RIGHT if pos == "top" else self.BORDER_BOT_RIGHT
-        stdscr.addstr(y, x, left + (self.BORDER_HORIZ * (self.total_width - 2)) + right)
-
-    def render_row(self, stdscr, y, x, cells, color_pair=None):
-        row_str = ""
-        for i, cell in enumerate(cells):
-            width = self.col_widths[i]
-            # Truncate and pad
-            content = str(cell)[:width]
-            row_str += f" {content:<{width}} "
-            if i < len(cells) - 1:
-                row_str += self.DIVIDER
-
-        if color_pair:
-            stdscr.attron(color_pair)
-        stdscr.addstr(y, x, f"{self.BORDER_SIDE}{row_str}{self.BORDER_SIDE}")
-        if color_pair:
-            stdscr.attroff(color_pair)
-
-    def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows):
-        start_x = max(0, (w - self.total_width) // 2)
-
-        # Top Border and Header
-        self.draw_border(stdscr, y, start_x, "top")
-        self.render_row(stdscr, y + 1, start_x, self.headers, curses.color_pair(1))
-
-        # Body
-        visible_items = data_rows[scroll_offset: scroll_offset + max_rows]
-        for i, row in enumerate(visible_items):
-            self.render_row(stdscr, y + 2 + i, start_x, row)
-
-        # Bottom Border
-        footer_y = y + 2 + len(visible_items)
-        self.draw_border(stdscr, footer_y, start_x, "bot")
-
-        return footer_y
-
-class WorkoutTable(BaseTable):
-    COL_NAME_WIDTH = 25
-    COL_COUNT_WIDTH = 10
-    MAX_VISIBLE = 5
-
-    def __init__(self):
-        # Initialize the base class with Workout-specific widths and headers
-        super().__init__(
-            col_widths=[self.COL_NAME_WIDTH, self.COL_COUNT_WIDTH],
-            headers=["Workout", "Count"]
-        )
-
-    def draw(self, stdscr, y, w, history_dict, scroll_offset):
-        # Convert dictionary to a list of lists for the generic renderer
-        rows = [[name, count] for name, count in history_dict.items()]
-
-        last_y = self.render(
-            stdscr, y, w,
-            data_rows=rows,
-            scroll_offset=scroll_offset,
-            max_rows=self.MAX_VISIBLE
-        )
-
-        # Optional: Add scroll indicator centered on this specific table width
-        if len(rows) > self.MAX_VISIBLE:
-            start_x = max(0, (w - self.total_width) // 2)
-            msg = f" {scroll_offset + 1}-{scroll_offset + min(len(rows), self.MAX_VISIBLE)} of {len(rows)} "
-            stdscr.addstr(last_y, start_x + (self.total_width - len(msg)) // 2, msg, curses.A_REVERSE)
-
-        return last_y
 
 class WorkoutTUI:
     # Class properties
     manager: WorkoutManager
     settings: Settings
+    table: WorkoutTable
     running: bool
     last_alert_time: float
     alert_triggered: bool
     scroll_offset: int  # Added to track table position
 
-    def __init__(self):# Initialize state
+    def __init__(self):  # Initialize state
         self.running = True
         self.last_alert_time = time.time()
         self.alert_triggered = False
@@ -169,11 +55,6 @@ class WorkoutTUI:
         else:
             self.save_data()
 
-    def setup_defaults(self):
-        self.settings = Settings()
-        self.manager = WorkoutManager()
-        self.save_data()
-
     def save_data(self):
         data = {
             "settings": self.settings.to_dict(),
@@ -204,25 +85,24 @@ class WorkoutTUI:
         """Helper to get text input with a clean buffer"""
         h, w = stdscr.getmaxyx()
 
-        # 1. Clear the input line and show prompt
+        # Clear the input line and show prompt
         stdscr.move(h - 2, 0)
         stdscr.clrtoeol()
         stdscr.addstr(h - 2, 2, prompt, curses.color_pair(1))
 
-        # 2. Preparation for input
+        # Preparation for input
         curses.echo()
         curses.curs_set(1)
         stdscr.nodelay(False)  # Wait for the user to actually type
         curses.flushinp()  # Clear any pending 'Enter' keys from the menu
 
         try:
-            # We use getstr and decode
             input_bytes = stdscr.getstr(h - 2, len(prompt) + 2)
             result = input_bytes.decode('utf-8').strip()
         except:
             result = ""
 
-        # 3. Cleanup after input
+        # Cleanup after input
         curses.noecho()
         curses.curs_set(0)
         stdscr.nodelay(True)  # Back to non-blocking for the timer
