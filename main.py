@@ -5,7 +5,7 @@ import threading
 import os
 from datetime import datetime
 from modules.models import Settings, WorkoutManager
-from modules.ui_components import WorkoutTable, Color
+from modules.ui_components import WorkoutTable, TotalsTable, Color
 
 DATA_FILE = "workout_data.json"
 
@@ -15,6 +15,7 @@ class WorkoutTUI:
     manager: WorkoutManager
     settings: Settings
     table: WorkoutTable
+    totals_table: TotalsTable
     running: bool
     last_alert_time: float
     alert_triggered: bool
@@ -25,6 +26,7 @@ class WorkoutTUI:
         self.last_alert_time = time.time()
         self.alert_triggered = False
         self.table = WorkoutTable()
+        self.totals_table = TotalsTable()
         self.scroll_offset = 0
 
         # Initialize Data Objects (will be populated by load_data)
@@ -153,8 +155,17 @@ class WorkoutTUI:
             today = datetime.now().strftime("%Y-%m-%d")
             history = self.manager.history.get(today, [])
 
-            # Title and Table are now handled entirely by this one call
-            table_end_y = self.table.draw(stdscr, 6, w, history, self.scroll_offset)
+            # Calculate horizontal positions
+            gap = 4
+            total_combined_width = self.table.total_width + gap + self.totals_table.total_width
+            start_x = max(2, (w - total_combined_width) // 2)
+
+            # Draw Log Table on the left
+            table_end_y = self.table.draw(stdscr, 6, w, history, self.scroll_offset, x_offset=start_x)
+
+            # Draw Totals Table on the right
+            totals_x = start_x + self.table.total_width + gap
+            self.totals_table.draw(stdscr, 6, w, history, x_offset=totals_x)
 
             menu_start_y = table_end_y + 2
 

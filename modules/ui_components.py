@@ -103,8 +103,9 @@ class BaseTable:
 
         stdscr.addstr(y, current_x, self.BORDER_SIDE)
 
-    def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows):
-        start_x = max(0, (w - self.total_width) // 2)
+    def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows, x_offset=None):
+        # If x_offset is provided, use it; otherwise, center the table
+        start_x = x_offset if x_offset is not None else max(0, (w - self.total_width) // 2)
         current_y = y
 
         # Bordered Title Section
@@ -174,7 +175,7 @@ class WorkoutTable(BaseTable):
             show_header_border=False,
         )
 
-    def draw(self, stdscr, y, w, history_list, scroll_offset):
+    def draw(self, stdscr, y, w, history_list, scroll_offset, x_offset):
         rows = []
         for item in history_list:
             # Convert Unix timestamp back to local time for display
@@ -184,7 +185,37 @@ class WorkoutTable(BaseTable):
 
             rows.append([display_time, sets_x_reps, item["name"]])
 
-        return self.render(stdscr, y, w, rows, scroll_offset, self.MAX_VISIBLE)
+        return self.render(stdscr, y, w, rows, scroll_offset, self.MAX_VISIBLE, x_offset=x_offset)
+
+class TotalsTable(BaseTable):
+    MAX_VISIBLE = 8
+
+    def __init__(self):
+        headers = [
+            {"title": "Workout", "width": 15, "align": "left"},
+            {"title": "Total", "width": 7, "align": "center"}
+        ]
+        super().__init__(
+            headers=headers,
+            title="DAILY TOTALS",
+            show_title=True,
+            show_row_borders=False,
+            show_col_borders=False,
+            show_header_border=False,
+        )
+
+    def draw(self, stdscr, y, w, history_list, x_offset):
+        # Aggregate totals from the history list of dictionaries
+        totals = {}
+        for item in history_list:
+            name = item["name"]
+            # Volume = sets * reps
+            volume = item["sets"] * item["reps"]
+            totals[name] = totals.get(name, 0) + volume
+
+        rows = [[name, count] for name, count in totals.items()]
+        # Render with the specific x_offset
+        return self.render(stdscr, y, w, rows, 0, self.MAX_VISIBLE, x_offset=x_offset)
 
 class Color:
     HEADER = 1
