@@ -79,7 +79,7 @@ class BaseTable:
 
 class WorkoutTable(BaseTable):
     COL_TIME_WIDTH = 10
-    COL_COUNT_WIDTH = 5
+    COL_COUNT_WIDTH = 8
     COL_NAME_WIDTH = 20
     MAX_VISIBLE = 5
 
@@ -96,8 +96,9 @@ class WorkoutTable(BaseTable):
         for item in history_list:
             # Convert Unix timestamp back to local time for display
             display_time = datetime.fromtimestamp(item["timestamp"]).strftime("%H:%M:%S")
+            # Format the count column as "Sets x Reps"
+            sets_x_reps = f"{item['sets']} x {item['reps']}"
 
-            # Add the formatted row
-            rows.append([display_time, item["count"], item["name"]])
+            rows.append([display_time, sets_x_reps, item["name"]])
 
         return self.render(stdscr, y, w, rows, scroll_offset, self.MAX_VISIBLE)

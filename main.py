@@ -188,11 +188,15 @@ class WorkoutTUI:
                     stdscr.addstr(h - 3, 2, f"Available: {', '.join(self.manager.workouts)}")
                     name = self.get_input(stdscr, "Workout Name: ")
                     if name in self.manager.workouts:
-                        count = self.get_input(stdscr, "Amount (reps/secs): ")
-                        if count.isdigit():
-                            self.manager.log_progress(name, int(count))
+                        # Get the number of sets
+                        sets_input = self.get_input(stdscr, "Sets (default 1): ")
+                        sets = sets_input if sets_input else "1"
+                        # Get the number of reps
+                        reps = self.get_input(stdscr, "Reps per set: ")
+
+                        if sets.isdigit() and reps.isdigit():
+                            self.manager.log_progress(name, int(sets), int(reps))
                             self.save_data()
-                            self.get_input(stdscr, "Logged! Press Enter...")
                     elif name:
                         self.get_input(stdscr, f"'{name}' not found. Press Enter...")
 

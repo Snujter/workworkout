@@ -21,7 +21,7 @@ class WorkoutManager:
         if name in self.workouts:
             self.workouts.remove(name)
 
-    def log_progress(self, name, count):
+    def log_progress(self, name, sets, reps):
         today = datetime.now().strftime("%Y-%m-%d")
         now_unix_time = time.time()
 
@@ -30,7 +30,8 @@ class WorkoutManager:
 
         entry = {
             "name": name,
-            "count": count,
+            "sets": sets,
+            "reps": reps,
             "timestamp": now_unix_time
         }
         self.history[today].append(entry)
