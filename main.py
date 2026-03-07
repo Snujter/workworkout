@@ -151,13 +151,12 @@ class WorkoutTUI:
                 stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(2) | curses.A_BLINK)
 
             # --- Progress Table ---
-            stdscr.addstr(6, w // 2 - 10, "TODAY'S PROGRESS", curses.A_UNDERLINE)
-
             # Get history and pass it to the specific table component
             today = datetime.now().strftime("%Y-%m-%d")
-            history = self.manager.history.get(today, {})
+            history = self.manager.history.get(today, [])
 
-            table_end_y = self.table.draw(stdscr, 7, w, history, self.scroll_offset)
+            # Title and Table are now handled entirely by this one call
+            table_end_y = self.table.draw(stdscr, 6, w, history, self.scroll_offset)
 
             menu_start_y = table_end_y + 2
 
