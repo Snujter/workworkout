@@ -1,4 +1,5 @@
 import curses
+from datetime import datetime
 
 
 class BaseTable:
@@ -48,16 +49,28 @@ class BaseTable:
 
 
 class WorkoutTable(BaseTable):
-    COL_NAME_WIDTH = 25
-    COL_COUNT_WIDTH = 10
+    COL_TIME_WIDTH = 10
+    COL_COUNT_WIDTH = 5
+    COL_NAME_WIDTH = 20
     MAX_VISIBLE = 5
 
     def __init__(self):
-        super().__init__([self.COL_NAME_WIDTH, self.COL_COUNT_WIDTH], ["Workout", "Count"])
+        super().__init__(
+            [self.COL_TIME_WIDTH, self.COL_COUNT_WIDTH, self.COL_NAME_WIDTH],
+            ["Time", "Count", "Workout"]
+        )
 
-    def draw(self, stdscr, y, w, history_dict, scroll_offset):
-        rows = [[name, count] for name, count in history_dict.items()]
+    def draw(self, stdscr, y, w, history_list, scroll_offset):
+        rows = []
+        for item in history_list:
+            # Convert Unix timestamp back to local time for display
+            display_time = datetime.fromtimestamp(item["timestamp"]).strftime("%H:%M:%S")
+
+            # Add the formatted row
+            rows.append([display_time, item["count"], item["name"]])
+
         last_y = self.render(stdscr, y, w, rows, scroll_offset, self.MAX_VISIBLE)
+
         if len(rows) > self.MAX_VISIBLE:
             start_x = max(0, (w - self.total_width) // 2)
             msg = f" {scroll_offset + 1}-{scroll_offset + min(len(rows), self.MAX_VISIBLE)} of {len(rows)} "

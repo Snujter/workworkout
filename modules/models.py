@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 
 class Settings:
@@ -22,9 +23,17 @@ class WorkoutManager:
 
     def log_progress(self, name, count):
         today = datetime.now().strftime("%Y-%m-%d")
+        now_unix_time = time.time()
+
         if today not in self.history:
-            self.history[today] = {}
-        self.history[today][name] = self.history[today].get(name, 0) + count
+            self.history[today] = []
+
+        entry = {
+            "name": name,
+            "count": count,
+            "timestamp": now_unix_time
+        }
+        self.history[today].append(entry)
 
     def to_dict(self):
         return {
