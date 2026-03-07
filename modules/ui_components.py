@@ -17,24 +17,23 @@ class BaseTable:
     JUNCTION_BOT = "┴"
 
     def __init__(self,
-                 col_widths,
                  headers,
                  title="",
                  show_title=True,
                  show_row_borders=False,
                  show_col_borders=True,
                  show_header_border=True):
-        self.col_widths = col_widths
-        self.headers = headers
+        self.headers = headers  # List of dicts: {"title": str, "width": int, "align": str}
         self.header_color_id = Color.HEADER
         self.title = title
         self.show_title = show_title
         self.show_row_borders = show_row_borders
         self.show_col_borders = show_col_borders
         self.show_header_border = show_header_border  # Store setting
-        self.total_width = sum(col_widths) + (len(col_widths) * 2) + (len(col_widths) - 1) + 2
+        self.total_width = sum(h["width"] for h in headers) + (len(headers) * 2) + (len(headers) - 1) + 2
 
     def draw_border(self, stdscr, y, x, pos="top"):
+        # Set dividers
         if pos == "top":
             left, right, junction = self.BORDER_TOP_LEFT, self.BORDER_TOP_RIGHT, self.JUNCTION_TOP
         elif pos == "mid":
@@ -42,19 +41,24 @@ class BaseTable:
         else:
             left, right, junction = self.BORDER_BOT_LEFT, self.BORDER_BOT_RIGHT, self.JUNCTION_BOT
 
+        # Set up line
         line = left
-        for i, width in enumerate(self.col_widths):
-            line += self.BORDER_HORIZ * (width + 2)
-            if i < len(self.col_widths) - 1:
-                # Use the constant retrieved based on 'pos'
+
+        # Iterating through the header objects
+        for i, h_cfg in enumerate(self.headers):
+            # Each column width + 2 for the internal padding spaces
+            line += self.BORDER_HORIZ * (h_cfg["width"] + 2)
+
+            if i < len(self.headers) - 1:
                 if self.show_col_borders:
                     line += junction
                 else:
                     line += self.BORDER_HORIZ
+
         line += right
         stdscr.addstr(y, x, line)
 
-    def render_header_row(self, stdscr, y, x, cells, color_id):
+    def render_header_row(self, stdscr, y, x, color_id):
         """Renders header where only text cells get background colors."""
         current_x = x
 
@@ -62,41 +66,42 @@ class BaseTable:
         stdscr.addstr(y, current_x, self.BORDER_SIDE)
         current_x += 1
 
-        for i, cell in enumerate(cells):
-            width = self.col_widths[i]
-            content = f" {str(cell)[:width]:<{width}} "
+        for i, h_cfg in enumerate(self.headers):
+            content = self._format_cell(h_cfg["title"], h_cfg)
 
             # Apply color ONLY to the content block
             stdscr.addstr(y, current_x, content, curses.color_pair(color_id))
             current_x += len(content)
 
             # Draw Divider (No background color)
-            if i < len(cells) - 1:
-                if self.show_col_borders:
-                    stdscr.addstr(y, current_x, self.DIVIDER)
-                else:
-                    stdscr.addstr(y, current_x, " ")
+            if i < len(self.headers) - 1:
+                stdscr.addstr(y, current_x, self.DIVIDER if self.show_col_borders else " ")
                 current_x += 1
 
         # Draw Right Border
         stdscr.addstr(y, current_x, self.BORDER_SIDE)
 
     def render_row(self, stdscr, y, x, cells, color_id=None):
-        row_str = ""
-        for i, cell in enumerate(cells):
-            width = self.col_widths[i]
-            content = str(cell)[:width]
-            row_str += f" {content:<{width}} "
-            if self.show_col_borders and i < len(cells) - 1:
-                row_str += self.DIVIDER
-            elif not self.show_col_borders and i < len(cells) - 1:
-                row_str += " "
+        current_x = x
+        stdscr.addstr(y, current_x, self.BORDER_SIDE)
+        current_x += 1
 
-        if color_id:
-            stdscr.attron(curses.color_pair(color_id))
-        stdscr.addstr(y, x, f"{self.BORDER_SIDE}{row_str}{self.BORDER_SIDE}")
-        if color_id:
-            stdscr.attroff(curses.color_pair(color_id))
+        for i, cell in enumerate(cells):
+            content = self._format_cell(cell, self.headers[i])
+
+            if color_id:
+                stdscr.attron(curses.color_pair(color_id))
+            stdscr.addstr(y, current_x, content)
+            if color_id:
+                stdscr.attroff(curses.color_pair(color_id))
+
+            current_x += len(content)
+
+            if i < len(self.headers) - 1:
+                stdscr.addstr(y, current_x, self.DIVIDER if self.show_col_borders else " ")
+                current_x += 1
+
+        stdscr.addstr(y, current_x, self.BORDER_SIDE)
 
     def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows):
         start_x = max(0, (w - self.total_width) // 2)
@@ -115,7 +120,7 @@ class BaseTable:
         current_y += 1
 
         # Header Row
-        self.render_header_row(stdscr, current_y, start_x, self.headers, self.header_color_id)
+        self.render_header_row(stdscr, current_y, start_x, self.header_color_id)
         current_y += 1
 
         # Conditional Header Bottom Border
@@ -137,17 +142,31 @@ class BaseTable:
 
         return current_y
 
+    def _format_cell(self, text, header_cfg):
+        """Uses the header object to determine padding and alignment."""
+        width = header_cfg["width"]
+        align = header_cfg.get("align", "left")
+        text = str(text)[:width]
+
+        if align == "center":
+            return f" {text.center(width)} "
+        elif align == "right":
+            return f" {text.rjust(width)} "
+        else:
+            return f" {text.ljust(width)} "
 
 class WorkoutTable(BaseTable):
-    COL_TIME_WIDTH = 10
-    COL_COUNT_WIDTH = 8
-    COL_NAME_WIDTH = 20
     MAX_VISIBLE = 5
 
     def __init__(self):
+        headers = [
+            {"title": "Time", "width": 10, "align": "center"},
+            {"title": "Sets x Reps", "width": 10, "align": "right"},
+            {"title": "Workout", "width": 16, "align": "left"}
+        ]
+
         super().__init__(
-            col_widths=[self.COL_TIME_WIDTH, self.COL_COUNT_WIDTH, self.COL_NAME_WIDTH],
-            headers=["Time", "Count", "Workout"],
+            headers=headers,
             title="TODAY'S PROGRESS",
             show_title=True,
             show_row_borders=False,
