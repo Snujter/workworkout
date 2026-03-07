@@ -12,23 +12,46 @@ class BaseTable:
     DIVIDER = "│"
     BORDER_JOIN_LEFT = "├"
     BORDER_JOIN_RIGHT = "┤"
+    JUNCTION_TOP = "┬"
+    JUNCTION_MID = "┼"
+    JUNCTION_BOT = "┴"
 
-    def __init__(self, col_widths, headers, title="", show_title=True):
+    def __init__(self,
+                 col_widths,
+                 headers,
+                 title="",
+                 show_title=True,
+                 show_row_borders=False,
+                 show_col_borders=True,
+                 show_header_border=True):
         self.col_widths = col_widths
         self.headers = headers
         self.title = title
         self.show_title = show_title
+        self.show_row_borders = show_row_borders
+        self.show_col_borders = show_col_borders
+        self.show_header_border = show_header_border  # Store setting
         self.total_width = sum(col_widths) + (len(col_widths) * 2) + (len(col_widths) - 1) + 2
 
     def draw_border(self, stdscr, y, x, pos="top"):
         if pos == "top":
-            left, right = self.BORDER_TOP_LEFT, self.BORDER_TOP_RIGHT
+            left, right, junction = self.BORDER_TOP_LEFT, self.BORDER_TOP_RIGHT, self.JUNCTION_TOP
         elif pos == "mid":
-            left, right = self.BORDER_JOIN_LEFT, self.BORDER_JOIN_RIGHT
+            left, right, junction = self.BORDER_JOIN_LEFT, self.BORDER_JOIN_RIGHT, self.JUNCTION_MID
         else:
-            left, right = self.BORDER_BOT_LEFT, self.BORDER_BOT_RIGHT
+            left, right, junction = self.BORDER_BOT_LEFT, self.BORDER_BOT_RIGHT, self.JUNCTION_BOT
 
-        stdscr.addstr(y, x, left + (self.BORDER_HORIZ * (self.total_width - 2)) + right)
+        line = left
+        for i, width in enumerate(self.col_widths):
+            line += self.BORDER_HORIZ * (width + 2)
+            if i < len(self.col_widths) - 1:
+                # Use the constant retrieved based on 'pos'
+                if self.show_col_borders:
+                    line += junction
+                else:
+                    line += self.BORDER_HORIZ
+        line += right
+        stdscr.addstr(y, x, line)
 
     def render_row(self, stdscr, y, x, cells, color_pair=None):
         row_str = ""
@@ -36,14 +59,14 @@ class BaseTable:
             width = self.col_widths[i]
             content = str(cell)[:width]
             row_str += f" {content:<{width}} "
-            if i < len(cells) - 1:
+            if self.show_col_borders and i < len(cells) - 1:
                 row_str += self.DIVIDER
+            elif not self.show_col_borders and i < len(cells) - 1:
+                row_str += " "
 
-        if color_pair:
-            stdscr.attron(color_pair)
+        if color_pair: stdscr.attron(color_pair)
         stdscr.addstr(y, x, f"{self.BORDER_SIDE}{row_str}{self.BORDER_SIDE}")
-        if color_pair:
-            stdscr.attroff(color_pair)
+        if color_pair: stdscr.attroff(color_pair)
 
     def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows):
         start_x = max(0, (w - self.total_width) // 2)
@@ -65,16 +88,24 @@ class BaseTable:
         self.render_row(stdscr, current_y, start_x, self.headers, curses.color_pair(1))
         current_y += 1
 
+        # Conditional Header Bottom Border
+        if self.show_header_border:
+            self.draw_border(stdscr, current_y, start_x, "mid")
+            current_y += 1
+
         # Body Section
         visible_items = data_rows[scroll_offset: scroll_offset + max_rows]
         for i, row in enumerate(visible_items):
-            self.render_row(stdscr, current_y + i, start_x, row)
+            if self.show_row_borders and i > 0:
+                self.draw_border(stdscr, current_y, start_x, "mid")
+                current_y += 1
+            self.render_row(stdscr, current_y, start_x, row)
+            current_y += 1
 
         # Bottom Border
-        footer_y = current_y + len(visible_items)
-        self.draw_border(stdscr, footer_y, start_x, "bot")
+        self.draw_border(stdscr, current_y, start_x, "bot")
 
-        return footer_y
+        return current_y
 
 
 class WorkoutTable(BaseTable):
@@ -88,7 +119,10 @@ class WorkoutTable(BaseTable):
             col_widths=[self.COL_TIME_WIDTH, self.COL_COUNT_WIDTH, self.COL_NAME_WIDTH],
             headers=["Time", "Count", "Workout"],
             title="TODAY'S PROGRESS",
-            show_title=True
+            show_title=True,
+            show_row_borders=False,
+            show_col_borders=False,
+            show_header_border=False,
         )
 
     def draw(self, stdscr, y, w, history_list, scroll_offset):
