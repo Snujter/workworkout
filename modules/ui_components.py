@@ -54,6 +54,33 @@ class BaseTable:
         line += right
         stdscr.addstr(y, x, line)
 
+    def render_header_row(self, stdscr, y, x, cells, color_id):
+        """Renders header where only text cells get background colors."""
+        current_x = x
+
+        # Draw Left Border
+        stdscr.addstr(y, current_x, self.BORDER_SIDE)
+        current_x += 1
+
+        for i, cell in enumerate(cells):
+            width = self.col_widths[i]
+            content = f" {str(cell)[:width]:<{width}} "
+
+            # Apply color ONLY to the content block
+            stdscr.addstr(y, current_x, content, curses.color_pair(color_id))
+            current_x += len(content)
+
+            # Draw Divider (No background color)
+            if i < len(cells) - 1:
+                if self.show_col_borders:
+                    stdscr.addstr(y, current_x, self.DIVIDER)
+                else:
+                    stdscr.addstr(y, current_x, " ")
+                current_x += 1
+
+        # Draw Right Border
+        stdscr.addstr(y, current_x, self.BORDER_SIDE)
+
     def render_row(self, stdscr, y, x, cells, color_id=None):
         row_str = ""
         for i, cell in enumerate(cells):
@@ -88,7 +115,7 @@ class BaseTable:
         current_y += 1
 
         # Header Row
-        self.render_row(stdscr, current_y, start_x, self.headers, Color.HEADER)
+        self.render_header_row(stdscr, current_y, start_x, self.headers, self.header_color_id)
         current_y += 1
 
         # Conditional Header Bottom Border
