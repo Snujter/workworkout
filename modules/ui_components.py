@@ -26,6 +26,7 @@ class BaseTable:
                  show_header_border=True):
         self.col_widths = col_widths
         self.headers = headers
+        self.header_color_id = Color.HEADER
         self.title = title
         self.show_title = show_title
         self.show_row_borders = show_row_borders
@@ -53,7 +54,7 @@ class BaseTable:
         line += right
         stdscr.addstr(y, x, line)
 
-    def render_row(self, stdscr, y, x, cells, color_pair=None):
+    def render_row(self, stdscr, y, x, cells, color_id=None):
         row_str = ""
         for i, cell in enumerate(cells):
             width = self.col_widths[i]
@@ -64,9 +65,11 @@ class BaseTable:
             elif not self.show_col_borders and i < len(cells) - 1:
                 row_str += " "
 
-        if color_pair: stdscr.attron(color_pair)
+        if color_id:
+            stdscr.attron(curses.color_pair(color_id))
         stdscr.addstr(y, x, f"{self.BORDER_SIDE}{row_str}{self.BORDER_SIDE}")
-        if color_pair: stdscr.attroff(color_pair)
+        if color_id:
+            stdscr.attroff(curses.color_pair(color_id))
 
     def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows):
         start_x = max(0, (w - self.total_width) // 2)
@@ -85,7 +88,7 @@ class BaseTable:
         current_y += 1
 
         # Header Row
-        self.render_row(stdscr, current_y, start_x, self.headers, curses.color_pair(1))
+        self.render_row(stdscr, current_y, start_x, self.headers, Color.HEADER)
         current_y += 1
 
         # Conditional Header Bottom Border
@@ -136,3 +139,19 @@ class WorkoutTable(BaseTable):
             rows.append([display_time, sets_x_reps, item["name"]])
 
         return self.render(stdscr, y, w, rows, scroll_offset, self.MAX_VISIBLE)
+
+class Color:
+    HEADER = 1
+    ALERT = 2
+    SELECTED = 3
+    DIM = 4
+    SUCCESS = 5
+
+    @staticmethod
+    def setup():
+        """Initialize all color pairs in one place."""
+        curses.init_pair(Color.HEADER, curses.COLOR_WHITE, curses.COLOR_BLUE)
+        curses.init_pair(Color.ALERT, curses.COLOR_WHITE, curses.COLOR_RED)
+        curses.init_pair(Color.SELECTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
+        curses.init_pair(Color.DIM, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        curses.init_pair(Color.SUCCESS, curses.COLOR_GREEN, curses.COLOR_BLACK)

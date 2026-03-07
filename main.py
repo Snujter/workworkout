@@ -5,7 +5,7 @@ import threading
 import os
 from datetime import datetime
 from modules.models import Settings, WorkoutManager
-from modules.ui_components import WorkoutTable
+from modules.ui_components import WorkoutTable, Color
 
 DATA_FILE = "workout_data.json"
 
@@ -88,7 +88,7 @@ class WorkoutTUI:
         # Clear the input line and show prompt
         stdscr.move(h - 2, 0)
         stdscr.clrtoeol()
-        stdscr.addstr(h - 2, 2, prompt, curses.color_pair(1))
+        stdscr.addstr(h - 2, 2, prompt, curses.color_pair(Color.HEADER))
 
         # Preparation for input
         curses.echo()
@@ -112,9 +112,7 @@ class WorkoutTUI:
         # Curses Setup
         curses.curs_set(0)
         curses.start_color()
-        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)
-        curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_RED)
-        curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_WHITE)
+        Color.setup()
 
         stdscr.nodelay(True)
         stdscr.keypad(True)
@@ -143,12 +141,12 @@ class WorkoutTUI:
             status = f"Next beep in: {self.format_time(time_left)}"
             cfg = f"Interval Set: {self.format_time(interval_sec)}"
 
-            stdscr.addstr(3, w // 2 - len(status) // 2, status, curses.color_pair(1))
+            stdscr.addstr(3, w // 2 - len(status) // 2, status, curses.color_pair(Color.HEADER))
             stdscr.addstr(4, w // 2 - len(cfg) // 2, cfg)
 
             if self.alert_triggered:
                 alert_msg = "!! TIME TO WORK OUT !! (Press 'c' to silence)"
-                stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(2) | curses.A_BLINK)
+                stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(Color.ALERT) | curses.A_BLINK)
 
             # --- Progress Table ---
             # Get history and pass it to the specific table component
@@ -165,7 +163,7 @@ class WorkoutTUI:
                 x = w // 2 - 12
                 y = menu_start_y + idx
                 if idx == current_row:
-                    stdscr.addstr(y, x, f" > {item} ", curses.color_pair(3))
+                    stdscr.addstr(y, x, f" > {item} ", curses.color_pair(Color.SELECTED))
                 else:
                     stdscr.addstr(y, x, f"   {item} ")
 
