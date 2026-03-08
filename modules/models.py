@@ -2,6 +2,8 @@ import time
 from datetime import datetime
 
 class Settings:
+    interval_minutes: int
+
     def __init__(self, interval_minutes=30):
         self.interval_minutes = interval_minutes
 
