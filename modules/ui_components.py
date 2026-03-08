@@ -206,9 +206,9 @@ class WorkoutTable(BaseTable):
 
     def __init__(self):
         headers = [
-            {"title": "Time", "width": 10, "align": "center"},
-            {"title": "Sets x Reps", "width": 10, "align": "right"},
-            {"title": "Workout", "width": 16, "align": "left"}
+            {"title": "Time", "width": 5, "align": "right"},
+            {"title": "Reps", "width": 7, "align": "right"},
+            {"title": "Workout", "width": 20, "align": "left"}
         ]
 
         super().__init__(
@@ -237,8 +237,8 @@ class TotalsTable(BaseTable):
 
     def __init__(self):
         headers = [
-            {"title": "Workout", "width": 15, "align": "left"},
-            {"title": "Total", "width": 7, "align": "center"}
+            {"title": "Reps", "width": 4, "align": "right"},
+            {"title": "Workout", "width": 20, "align": "left"},
         ]
         super().__init__(
             headers=headers,
@@ -258,7 +258,7 @@ class TotalsTable(BaseTable):
             volume = item["sets"] * item["reps"]
             totals[name] = totals.get(name, 0) + volume
 
-        rows = [[name, count] for name, count in totals.items()]
+        rows = [[count, name] for name, count in totals.items()]
         # Render with the specific x_offset
         return self.render(stdscr, y, w, rows, 0, self.MAX_VISIBLE, x_offset=x_offset)
 
