@@ -19,7 +19,8 @@ class WorkoutTUI:
     running: bool
     last_alert_time: float
     alert_triggered: bool
-    scroll_offset: int  # Added to track table position
+    scroll_offset: int
+    current_row: int
 
     def __init__(self):  # Initialize state
         self.running = True
@@ -28,6 +29,7 @@ class WorkoutTUI:
         self.table = WorkoutTable()
         self.totals_table = TotalsTable()
         self.scroll_offset = 0
+        self.current_row = 0
 
         # Initialize Data Objects (will be populated by load_data)
         self.settings = Settings()
@@ -110,125 +112,157 @@ class WorkoutTUI:
         stdscr.nodelay(True)  # Back to non-blocking for the timer
         return result
 
+    def select_from_list(self, stdscr, title, options):
+        if not options:
+            return None
+
+        h, w = stdscr.getmaxyx()
+        popup_h = len(options) + 5
+        popup_w = max(len(title), max(len(o) for o in options)) + 8
+        start_y = (h - popup_h) // 2
+        start_x = (w - popup_w) // 2
+
+        selected_idx = 0
+
+        while True:
+            # Draw Background and Borders manually
+            for i in range(popup_h):
+                stdscr.addstr(start_y + i, start_x, " " * popup_w, curses.color_pair(Color.HEADER))
+
+            # Draw the box outline
+            stdscr.attron(curses.color_pair(Color.HEADER))
+            # Corners
+            stdscr.addch(start_y, start_x, curses.ACS_ULCORNER)
+            stdscr.addch(start_y, start_x + popup_w - 1, curses.ACS_URCORNER)
+            stdscr.addch(start_y + popup_h - 1, start_x, curses.ACS_LLCORNER)
+            stdscr.addch(start_y + popup_h - 1, start_x + popup_w - 1, curses.ACS_LRCORNER)
+            # Lines
+            stdscr.hline(start_y, start_x + 1, curses.ACS_HLINE, popup_w - 2)
+            stdscr.hline(start_y + popup_h - 1, start_x + 1, curses.ACS_HLINE, popup_w - 2)
+            stdscr.vline(start_y + 1, start_x, curses.ACS_VLINE, popup_h - 2)
+            stdscr.vline(start_y + 1, start_x + popup_w - 1, curses.ACS_VLINE, popup_h - 2)
+
+            # Render Title
+            stdscr.addstr(start_y + 1, start_x + (popup_w - len(title)) // 2, title, curses.A_BOLD)
+            stdscr.attroff(curses.color_pair(Color.HEADER))
+
+            # Render Options
+            for idx, option in enumerate(options):
+                attr = curses.color_pair(Color.SELECTED) if idx == selected_idx else curses.color_pair(Color.HEADER)
+                # Centers text within the usable width
+                line = f" {option} ".center(popup_w - 2)
+                stdscr.addstr(start_y + 3 + idx, start_x + 1, line, attr)
+
+            stdscr.refresh()
+
+            key = stdscr.getch()
+            if key == curses.KEY_UP:
+                selected_idx = (selected_idx - 1) % len(options)
+            elif key == curses.KEY_DOWN:
+                selected_idx = (selected_idx + 1) % len(options)
+            elif key in [10, 13, curses.KEY_ENTER]:
+                return options[selected_idx]
+            elif key == 27:  # ESC key
+                return None
+
+    def render_main_ui(self, stdscr):
+        """Clears the screen and draws all persistent UI elements."""
+        stdscr.erase()  # Clear the buffer
+        h, w = stdscr.getmaxyx()
+
+        # Header Information
+        title = "WORKOUT REMINDER"
+        stdscr.addstr(1, (w - len(title)) // 2, title, curses.A_BOLD | curses.color_pair(Color.HEADER))
+
+        # # Timer Status with H/M/S Formatting
+        # interval_sec = self.settings.interval_minutes * 60
+        # time_left = int(interval_sec - (time.time() - self.last_alert_time))
+        #
+        # status = f"Next beep in: {self.format_time(time_left)}"
+        # cfg = f"Interval Set: {self.format_time(interval_sec)}"
+        #
+        # stdscr.addstr(3, w // 2 - len(status) // 2, status, curses.color_pair(Color.HEADER))
+        # stdscr.addstr(4, w // 2 - len(cfg) // 2, cfg)
+        #
+        # if self.alert_triggered:
+        #     alert_msg = "!! TIME TO WORK OUT !! (Press 'c' to silence)"
+        #     stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(Color.ALERT) | curses.A_BLINK)
+
+        # Side-by-Side Tables
+        today = datetime.now().strftime("%Y-%m-%d")
+        history = self.manager.history.get(today, [])
+
+        gap = 4
+        total_combined_width = self.table.total_width + gap + self.totals_table.total_width
+        start_x = max(2, (w - total_combined_width) // 2)
+
+        # Draw Progress Log (Left)
+        table_end_y = self.table.draw(stdscr, 4, w, history, self.scroll_offset, x_offset=start_x)
+
+        # Draw Totals Summary (Right)
+        totals_x = start_x + self.table.total_width + gap
+        self.totals_table.draw(stdscr, 4, w, history, x_offset=totals_x)
+
+        # Main Menu Navigation
+        menu_items = ["Log Activity", "Change Interval", "Settings", "Exit"]
+        menu_start_y = table_end_y + 2
+
+        for idx, item in enumerate(menu_items):
+            x_pos = (w - 20) // 2
+            if idx == self.current_row:
+                stdscr.addstr(menu_start_y + idx, x_pos, f" > {item} ", curses.color_pair(Color.SELECTED))
+            else:
+                stdscr.addstr(menu_start_y + idx, x_pos, f"   {item} ")
+
+        # Footer Instructions
+        instructions = "ARROWS: Navigate | ENTER: Select | ESC: Back"
+        stdscr.addstr(h - 2, (w - len(instructions)) // 2, instructions, curses.color_pair(Color.DIM))
+
     def main(self, stdscr):
-        # Curses Setup
+        # Initial Curses Setup
         curses.curs_set(0)
         curses.start_color()
         Color.setup()
 
-        stdscr.nodelay(True)
-        stdscr.keypad(True)
-
-        threading.Thread(target=self.background_timer, daemon=True).start()
-
-        menu = [
-            "Log Activity",
-            "Manage Workouts",
-            "Change Interval",
-            "Exit"
-        ]
-        current_row = 0
-
         while self.running:
-            stdscr.erase()
-            h, w = stdscr.getmaxyx()
-
-            # UI Header
-            stdscr.addstr(1, w // 2 - 10, "WORKOUT REMINDER", curses.A_BOLD)
-
-            # Timer Status with H/M/S Formatting
-            interval_sec = self.settings.interval_minutes * 60
-            time_left = int(interval_sec - (time.time() - self.last_alert_time))
-
-            status = f"Next beep in: {self.format_time(time_left)}"
-            cfg = f"Interval Set: {self.format_time(interval_sec)}"
-
-            stdscr.addstr(3, w // 2 - len(status) // 2, status, curses.color_pair(Color.HEADER))
-            stdscr.addstr(4, w // 2 - len(cfg) // 2, cfg)
-
-            if self.alert_triggered:
-                alert_msg = "!! TIME TO WORK OUT !! (Press 'c' to silence)"
-                stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(Color.ALERT) | curses.A_BLINK)
-
-            # --- Progress Table ---
-            # Get history and pass it to the specific table component
-            today = datetime.now().strftime("%Y-%m-%d")
-            history = self.manager.history.get(today, [])
-
-            # Calculate horizontal positions
-            gap = 4
-            total_combined_width = self.table.total_width + gap + self.totals_table.total_width
-            start_x = max(2, (w - total_combined_width) // 2)
-
-            # Draw Log Table on the left
-            table_end_y = self.table.draw(stdscr, 6, w, history, self.scroll_offset, x_offset=start_x)
-
-            # Draw Totals Table on the right
-            totals_x = start_x + self.table.total_width + gap
-            self.totals_table.draw(stdscr, 6, w, history, x_offset=totals_x)
-
-            menu_start_y = table_end_y + 2
-
-            # Render Menu (Y-offset adjusted to 9 to account for extra timer lines)
-            for idx, item in enumerate(menu):
-                x = w // 2 - 12
-                y = menu_start_y + idx
-                if idx == current_row:
-                    stdscr.addstr(y, x, f" > {item} ", curses.color_pair(Color.SELECTED))
-                else:
-                    stdscr.addstr(y, x, f"   {item} ")
-
+            # Draw everything
+            self.render_main_ui(stdscr)
             stdscr.refresh()
 
-            # Input Handling
-            try:
-                key = stdscr.getch()
-            except:
-                key = -1
+            # Wait for input
+            key = stdscr.getch()
 
+            # Handle Navigation
             if key == curses.KEY_UP:
-                current_row = (current_row - 1) % len(menu)
+                self.current_row = (self.current_row - 1) % 4
             elif key == curses.KEY_DOWN:
-                current_row = (current_row + 1) % len(menu)
-            elif key == ord('c'):
-                self.alert_triggered = False
-            elif key in [curses.KEY_ENTER, 10, 13]:
-                if current_row == 0:  # Log Activity
-                    stdscr.addstr(h - 3, 2, f"Available: {', '.join(self.manager.workouts)}")
-                    name = self.get_input(stdscr, "Workout Name: ")
-                    if name in self.manager.workouts:
-                        # Get the number of sets
-                        sets_input = self.get_input(stdscr, "Sets (default 1): ")
-                        sets = sets_input if sets_input else "1"
-                        # Get the number of reps
-                        reps = self.get_input(stdscr, "Reps per set: ")
+                self.current_row = (self.current_row + 1) % 4
 
-                        if sets.isdigit() and reps.isdigit():
-                            self.manager.log_progress(name, int(sets), int(reps))
-                            self.save_data()
-                    elif name:
-                        self.get_input(stdscr, f"'{name}' not found. Press Enter...")
+            # Handle Selection
+            elif key in [10, 13, curses.KEY_ENTER]:
+                if self.current_row == 0:  # Log Activity
+                    # Show selection popup
+                    name = self.select_from_list(stdscr, "Select Workout", self.manager.workouts)
 
-                elif current_row == 1:  # Manage Workouts
-                    action = self.get_input(stdscr, "(A)dd or (D)elete? ").lower()
-                    if action == 'a':
-                        new_w = self.get_input(stdscr, "New workout name: ")
-                        self.manager.add_workout_type(new_w)
-                    elif action == 'd':
-                        rem_w = self.get_input(stdscr, "Name to remove: ")
-                        self.manager.remove_workout_type(rem_w)
-                    self.save_data()
+                    if name:
+                        # Popup disappears because we re-render immediately
+                        self.render_main_ui(stdscr)
+                        stdscr.refresh()
 
-                elif current_row == 2:  # Change Interval
-                    val = self.get_input(stdscr, "New interval (mins): ")
-                    if val.isdigit():
-                        self.settings.interval_minutes = int(val)
-                        self.save_data()
+                        # Prompt for sets and reps over the clean UI
+                        sets_in = self.get_input(stdscr, f"Sets for {name} (default 1): ")
+                        sets = int(sets_in) if sets_in.isdigit() else 1
+                        reps_in = self.get_input(stdscr, "Reps per set: ")
 
-                elif current_row == 3:  # Exit
+                        if reps_in.isdigit():
+                            self.manager.log_progress(name, sets, int(reps_in))
+                            self.save_data()  # Persist changes
+
+                elif self.current_row == 3:  # Exit
                     self.running = False
 
-            time.sleep(0.05)
+            elif key == 27:  # Global ESC to exit
+                self.running = False
 
 
 if __name__ == "__main__":
