@@ -1,11 +1,10 @@
 import curses
 import time
 import json
-import threading
 import os
 from datetime import datetime
 from modules.models import Settings, WorkoutManager
-from modules.ui_components import WorkoutTable, TotalsTable, Color
+from modules.ui_components import WorkoutTable, TotalsTable, SelectionPopup, Color
 
 DATA_FILE = "workout_data.json"
 
@@ -112,59 +111,6 @@ class WorkoutTUI:
         stdscr.nodelay(True)  # Back to non-blocking for the timer
         return result
 
-    def select_from_list(self, stdscr, title, options):
-        if not options:
-            return None
-
-        h, w = stdscr.getmaxyx()
-        popup_h = len(options) + 5
-        popup_w = max(len(title), max(len(o) for o in options)) + 8
-        start_y = (h - popup_h) // 2
-        start_x = (w - popup_w) // 2
-
-        selected_idx = 0
-
-        while True:
-            # Draw Background and Borders manually
-            for i in range(popup_h):
-                stdscr.addstr(start_y + i, start_x, " " * popup_w, curses.color_pair(Color.HEADER))
-
-            # Draw the box outline
-            stdscr.attron(curses.color_pair(Color.HEADER))
-            # Corners
-            stdscr.addch(start_y, start_x, curses.ACS_ULCORNER)
-            stdscr.addch(start_y, start_x + popup_w - 1, curses.ACS_URCORNER)
-            stdscr.addch(start_y + popup_h - 1, start_x, curses.ACS_LLCORNER)
-            stdscr.addch(start_y + popup_h - 1, start_x + popup_w - 1, curses.ACS_LRCORNER)
-            # Lines
-            stdscr.hline(start_y, start_x + 1, curses.ACS_HLINE, popup_w - 2)
-            stdscr.hline(start_y + popup_h - 1, start_x + 1, curses.ACS_HLINE, popup_w - 2)
-            stdscr.vline(start_y + 1, start_x, curses.ACS_VLINE, popup_h - 2)
-            stdscr.vline(start_y + 1, start_x + popup_w - 1, curses.ACS_VLINE, popup_h - 2)
-
-            # Render Title
-            stdscr.addstr(start_y + 1, start_x + (popup_w - len(title)) // 2, title, curses.A_BOLD)
-            stdscr.attroff(curses.color_pair(Color.HEADER))
-
-            # Render Options
-            for idx, option in enumerate(options):
-                attr = curses.color_pair(Color.SELECTED) if idx == selected_idx else curses.color_pair(Color.HEADER)
-                # Centers text within the usable width
-                line = f" {option} ".center(popup_w - 2)
-                stdscr.addstr(start_y + 3 + idx, start_x + 1, line, attr)
-
-            stdscr.refresh()
-
-            key = stdscr.getch()
-            if key == curses.KEY_UP:
-                selected_idx = (selected_idx - 1) % len(options)
-            elif key == curses.KEY_DOWN:
-                selected_idx = (selected_idx + 1) % len(options)
-            elif key in [10, 13, curses.KEY_ENTER]:
-                return options[selected_idx]
-            elif key == 27:  # ESC key
-                return None
-
     def render_main_ui(self, stdscr):
         """Clears the screen and draws all persistent UI elements."""
         stdscr.erase()  # Clear the buffer
@@ -242,7 +188,8 @@ class WorkoutTUI:
             elif key in [10, 13, curses.KEY_ENTER]:
                 if self.current_row == 0:  # Log Activity
                     # Show selection popup
-                    name = self.select_from_list(stdscr, "Select Workout", self.manager.workouts)
+                    popup = SelectionPopup("Select Workout", self.manager.workouts)
+                    name = popup.draw(stdscr)
 
                     if name:
                         # Popup disappears because we re-render immediately
