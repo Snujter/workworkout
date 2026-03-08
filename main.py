@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 from modules.models import Settings, WorkoutManager
-from modules.ui_components import WorkoutTable, TotalsTable, SelectionPopup
+from modules.ui_components import WorkoutTable, TotalsTable, SelectionPopup, TimerWidget
 from modules.theme import Color, CURSES_ESC_DELAY_TIME
 
 DATA_FILE = "workout_data.json"
@@ -21,6 +21,7 @@ class WorkoutTUI:
     alert_triggered: bool
     scroll_offset: int
     current_row: int
+    timer_widget: TimerWidget
 
     def __init__(self):  # Initialize state
         os.environ.setdefault('ESCDELAY', CURSES_ESC_DELAY_TIME)
@@ -30,6 +31,7 @@ class WorkoutTUI:
         self.alert_triggered = False
         self.table = WorkoutTable()
         self.totals_table = TotalsTable()
+        self.timer_widget = TimerWidget()
         self.scroll_offset = 0
         self.current_row = 0
 
@@ -69,6 +71,18 @@ class WorkoutTUI:
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
 
+    def check_timer_alerts(self):
+        """Checks if the interval has elapsed and triggers audio/visual alerts."""
+        elapsed = time.time() - self.last_alert_time
+        threshold = self.settings.interval_minutes * 60
+
+        if elapsed >= threshold:
+            # Trigger system beep
+            print("\a", end="", flush=True)
+
+            self.alert_triggered = True
+            self.last_alert_time = time.time()
+
     def format_time(self, seconds):
         """Converts seconds into H:M:S format"""
         if seconds < 0: return "00h 00m 00s"
@@ -76,16 +90,6 @@ class WorkoutTUI:
         m = (seconds % 3600) // 60
         s = seconds % 60
         return f"{h:02d}h {m:02d}m {s:02d}s"
-
-    def background_timer(self):
-        while self.running:
-            elapsed = time.time() - self.last_alert_time
-            threshold = self.settings.interval_minutes * 60
-            if elapsed >= threshold:
-                self.alert_triggered = True
-                print("\a", end="", flush=True)
-                self.last_alert_time = time.time()
-            time.sleep(1)
 
     def get_input(self, stdscr, prompt):
         """Helper to get text input with a clean buffer"""
@@ -119,38 +123,29 @@ class WorkoutTUI:
         stdscr.erase()  # Clear the buffer
         h, w = stdscr.getmaxyx()
 
-        # Header Information
-        title = "WORKOUT REMINDER"
-        stdscr.addstr(1, (w - len(title)) // 2, title, curses.A_BOLD | curses.color_pair(Color.HEADER))
-
-        # # Timer Status with H/M/S Formatting
-        # interval_sec = self.settings.interval_minutes * 60
-        # time_left = int(interval_sec - (time.time() - self.last_alert_time))
-        #
-        # status = f"Next beep in: {self.format_time(time_left)}"
-        # cfg = f"Interval Set: {self.format_time(interval_sec)}"
-        #
-        # stdscr.addstr(3, w // 2 - len(status) // 2, status, curses.color_pair(Color.HEADER))
-        # stdscr.addstr(4, w // 2 - len(cfg) // 2, cfg)
-        #
-        # if self.alert_triggered:
-        #     alert_msg = "!! TIME TO WORK OUT !! (Press 'c' to silence)"
-        #     stdscr.addstr(6, w // 2 - len(alert_msg) // 2, alert_msg, curses.color_pair(Color.ALERT) | curses.A_BLINK)
-
-        # Side-by-Side Tables
-        today = datetime.now().strftime("%Y-%m-%d")
-        history = self.manager.history.get(today, [])
-
+        # Timer Widget
         gap = 4
         total_combined_width = self.table.total_width + gap + self.totals_table.total_width
         start_x = max(2, (w - total_combined_width) // 2)
+        current_y = 2
+        interval_sec = self.settings.interval_minutes * 60
+        time_left = int(interval_sec - (time.time() - self.last_alert_time))
+        current_y = self.timer_widget.draw(
+            stdscr, current_y, self.settings.interval_minutes,
+            max(0, time_left), total_combined_width, start_x
+        )
+
+        # Side-by-Side Tables
+        current_y += 1
+        today = datetime.now().strftime("%Y-%m-%d")
+        history = self.manager.history.get(today, [])
 
         # Draw Progress Log (Left)
-        table_end_y = self.table.draw(stdscr, 4, w, history, self.scroll_offset, x_offset=start_x)
+        table_end_y = self.table.draw(stdscr, current_y, w, history, self.scroll_offset, x_offset=start_x)
 
         # Draw Totals Summary (Right)
         totals_x = start_x + self.table.total_width + gap
-        self.totals_table.draw(stdscr, 4, w, history, x_offset=totals_x)
+        self.totals_table.draw(stdscr, current_y, w, history, x_offset=totals_x)
 
         # Main Menu Navigation
         menu_items = ["Log Activity", "Change Interval", "Settings", "Exit"]
@@ -173,10 +168,16 @@ class WorkoutTUI:
         curses.start_color()
         Color.setup()
 
+        # Check every second to update timer
+        stdscr.timeout(1000)
+
         while self.running:
             # Draw everything
             self.render_main_ui(stdscr)
             stdscr.refresh()
+
+            # Check for timer alerts
+            self.check_timer_alerts()
 
             # Wait for input
             key = stdscr.getch()

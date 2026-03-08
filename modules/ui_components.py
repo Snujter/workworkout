@@ -3,6 +3,50 @@ from datetime import datetime
 from modules.theme import Color
 
 
+class TimerWidget:
+    def __init__(self):
+        self.height = 3
+        self.BAR_FILLED = "█"
+        self.BAR_EMPTY = "░"
+
+    def draw(self, stdscr, y, interval_min, seconds_left, width, start_x):
+        """Draws the progress bar at the specified y coordinate."""
+        # Calculate percentage: (Time Remaining / Total Time)
+        total_seconds = max(1, interval_min * 60)
+        percent = max(0, min(1, seconds_left / total_seconds))
+
+        usable_width = width - 2
+        filled_length = int(usable_width * percent)
+        empty_length = usable_width - filled_length
+
+        # Format the overlay text
+        mins, secs = divmod(seconds_left, 60)
+        time_str = f" {mins:02d}:{secs:02d} "
+
+        # Draw the Box Border
+        stdscr.attron(curses.color_pair(Color.DIM))
+        stdscr.addch(y, start_x, curses.ACS_ULCORNER)
+        stdscr.addch(y, start_x + width - 1, curses.ACS_URCORNER)
+        stdscr.addch(y + 2, start_x, curses.ACS_LLCORNER)
+        stdscr.addch(y + 2, start_x + width - 1, curses.ACS_LRCORNER)
+        stdscr.hline(y, start_x + 1, curses.ACS_HLINE, usable_width)
+        stdscr.hline(y + 2, start_x + 1, curses.ACS_HLINE, usable_width)
+        stdscr.addch(y + 1, start_x, curses.ACS_VLINE)
+        stdscr.addch(y + 1, start_x + width - 1, curses.ACS_VLINE)
+
+        # Draw the Progress Bar
+        bar_str = (self.BAR_FILLED * filled_length) + (self.BAR_EMPTY * empty_length)
+        stdscr.addstr(y + 1, start_x + 1, bar_str)
+
+        # Overlay the Time
+        text_x = start_x + (width - len(time_str)) // 2
+        stdscr.addstr(y + 1, text_x, time_str, curses.A_BOLD | curses.A_REVERSE)
+        stdscr.attroff(curses.color_pair(Color.DIM))
+
+        # Return the next Y coordinate for the components below
+        return y + self.height
+
+
 class BaseTable:
     BORDER_TOP_LEFT = "┌"
     BORDER_TOP_RIGHT = "┐"
