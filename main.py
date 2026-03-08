@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from modules.models import Settings, WorkoutManager
 from modules.ui_components import WorkoutTable, TotalsTable, SelectionPopup
-from modules.theme import Color
+from modules.theme import Color, CURSES_ESC_DELAY_TIME
 
 DATA_FILE = "workout_data.json"
 
@@ -23,6 +23,8 @@ class WorkoutTUI:
     current_row: int
 
     def __init__(self):  # Initialize state
+        os.environ.setdefault('ESCDELAY', CURSES_ESC_DELAY_TIME)
+
         self.running = True
         self.last_alert_time = time.time()
         self.alert_triggered = False

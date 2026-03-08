@@ -1,6 +1,9 @@
 import curses
 
 
+CURSES_ESC_DELAY_TIME = '50' # the ESCDELAY setting expects a string
+
+
 class Color:
     HEADER = 1
     ALERT = 2
