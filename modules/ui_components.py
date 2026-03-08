@@ -180,7 +180,7 @@ class WorkoutTable(BaseTable):
         rows = []
         for item in history_list:
             # Convert Unix timestamp back to local time for display
-            display_time = datetime.fromtimestamp(item["timestamp"]).strftime("%H:%M:%S")
+            display_time = datetime.fromtimestamp(item["timestamp"]).strftime("%H:%M")
             # Format the count column as "Sets x Reps"
             sets_x_reps = f"{item['sets']} x {item['reps']}"
 
