@@ -4,7 +4,8 @@ import json
 import os
 from datetime import datetime
 from modules.models import Settings, WorkoutManager
-from modules.ui_components import WorkoutTable, TotalsTable, SelectionPopup, Color
+from modules.ui_components import WorkoutTable, TotalsTable, SelectionPopup
+from modules.theme import Color
 
 DATA_FILE = "workout_data.json"
 
