@@ -17,11 +17,18 @@ class TimerWidget:
 
         usable_width = width - 2
         filled_length = int(usable_width * percent)
-        empty_length = usable_width - filled_length
 
         # Format the overlay text
-        mins, secs = divmod(seconds_left, 60)
-        time_str = f" {mins:02d}:{secs:02d} "
+        hours, remainder = divmod(seconds_left, 3600)
+        mins, secs = divmod(remainder, 60)
+        if hours > 0:
+            time_str = f"{hours:02d}:{mins:02d}:{secs:02d}"
+        else:
+            time_str = f"{mins:02d}:{secs:02d}"
+
+        # Add padding to the text for better spacing
+        time_str = f" {time_str} "
+        text_start_in_bar = (usable_width - len(time_str)) // 2
 
         # Draw the Box Border
         stdscr.attron(curses.color_pair(Color.DIM))
@@ -33,17 +40,22 @@ class TimerWidget:
         stdscr.hline(y + 2, start_x + 1, curses.ACS_HLINE, usable_width)
         stdscr.addch(y + 1, start_x, curses.ACS_VLINE)
         stdscr.addch(y + 1, start_x + width - 1, curses.ACS_VLINE)
-
-        # Draw the Progress Bar
-        bar_str = (self.BAR_FILLED * filled_length) + (self.BAR_EMPTY * empty_length)
-        stdscr.addstr(y + 1, start_x + 1, bar_str)
-
-        # Overlay the Time
-        text_x = start_x + (width - len(time_str)) // 2
-        stdscr.addstr(y + 1, text_x, time_str, curses.A_BOLD | curses.A_REVERSE)
         stdscr.attroff(curses.color_pair(Color.DIM))
 
-        # Return the next Y coordinate for the components below
+        # Render the bar and text character by character
+        for i in range(usable_width):
+            is_text_zone = text_start_in_bar <= i < text_start_in_bar + len(time_str)
+
+            if is_text_zone:
+                char_to_draw = time_str[i - text_start_in_bar]
+                # Inverse color if text is over the filled portion
+                attr = curses.A_REVERSE | curses.A_BOLD if i < filled_length else curses.A_BOLD
+            else:
+                char_to_draw = self.BAR_FILLED if i < filled_length else self.BAR_EMPTY
+                attr = curses.A_NORMAL
+
+            stdscr.addch(y + 1, start_x + 1 + i, char_to_draw, attr)
+
         return y + self.height
 
 
