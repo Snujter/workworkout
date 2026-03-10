@@ -9,10 +9,10 @@ class TimerWidget:
         self.BAR_FILLED = "█"
         self.BAR_EMPTY = "░"
 
-    def draw(self, stdscr, y, interval_min, seconds_left, width, start_x):
+    def draw(self, stdscr, y, interval_seconds, seconds_left, width, start_x):
         """Draws the progress bar at the specified y coordinate."""
         # Calculate percentage: (Time Remaining / Total Time)
-        total_seconds = max(1, interval_min * 60)
+        total_seconds = max(1, interval_seconds)
         percent = max(0, min(1, seconds_left / total_seconds))
 
         usable_width = width - 2

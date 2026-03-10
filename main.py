@@ -50,7 +50,7 @@ class WorkoutTUI:
                     raw = json.load(f)
                     # Update existing objects instead of re-instantiating
                     if "settings" in raw:
-                        self.settings.interval_minutes = raw["settings"].get("interval_minutes", 30)
+                        self.settings.interval_seconds = raw["settings"].get("interval_seconds", 30)
 
                     if "workouts" in raw:
                         self.manager.workouts = raw["workouts"]
@@ -74,7 +74,7 @@ class WorkoutTUI:
     def check_timer_alerts(self):
         """Checks if the interval has elapsed and triggers audio/visual alerts."""
         elapsed = time.time() - self.last_alert_time
-        threshold = self.settings.interval_minutes * 60
+        threshold = self.settings.interval_seconds
 
         if elapsed >= threshold:
             # Trigger system beep
@@ -156,10 +156,10 @@ class WorkoutTUI:
         total_combined_width = self.table.total_width + gap + self.totals_table.total_width
         start_x = max(2, (w - total_combined_width) // 2)
         current_y = 2
-        interval_sec = self.settings.interval_minutes * 60
+        interval_sec = self.settings.interval_seconds
         time_left = int(interval_sec - (time.time() - self.last_alert_time))
         current_y = self.timer_widget.draw(
-            stdscr, current_y, self.settings.interval_minutes,
+            stdscr, current_y, self.settings.interval_seconds,
             max(0, time_left), total_combined_width, start_x
         )
 

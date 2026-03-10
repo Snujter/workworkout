@@ -2,13 +2,13 @@ import time
 from datetime import datetime
 
 class Settings:
-    interval_minutes: int
+    interval_seconds: int
 
-    def __init__(self, interval_minutes=30):
-        self.interval_minutes = interval_minutes
+    def __init__(self, interval_seconds=30):
+        self.interval_seconds = interval_seconds
 
     def to_dict(self):
-        return {"interval_minutes": self.interval_minutes}
+        return {"interval_seconds": self.interval_seconds}
 
 class WorkoutManager:
     def __init__(self, workouts=None, history=None):
