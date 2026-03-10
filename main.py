@@ -118,6 +118,34 @@ class WorkoutTUI:
         stdscr.nodelay(True)  # Back to non-blocking for the timer
         return result
 
+    def get_validated_input(self, stdscr, prompt, validation_func, default=None, error_pos=(0, 2)):
+        """Reusable input loop with validation and error rendering."""
+        error_msg = ""
+        while True:
+            self.render_main_ui(stdscr)
+            if error_msg:
+                y, x = error_pos
+                stdscr.addstr(y, x, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
+
+            display_prompt = f"{prompt} (default {default}): " if default else f"{prompt}: "
+            val = self.get_input(stdscr, display_prompt)
+
+            # Handle default value if input is empty
+            if not val and default is not None:
+                return default
+
+            # Run validation
+            is_valid, result, err = validation_func(val)
+            if is_valid:
+                return result
+
+            error_msg = err
+
+    def is_positive_int(self, val: str):
+        if val.isdigit() and int(val) > 0:
+            return True, int(val), ""
+        return False, None, "Please enter a positive integer."
+
     def render_main_ui(self, stdscr):
         """Clears the screen and draws all persistent UI elements."""
         stdscr.erase()  # Clear the buffer
@@ -200,14 +228,23 @@ class WorkoutTUI:
                         self.render_main_ui(stdscr)
                         stdscr.refresh()
 
-                        # Prompt for sets and reps over the clean UI
-                        sets_in = self.get_input(stdscr, f"Sets for {name} (default 1): ")
-                        sets = int(sets_in) if sets_in.isdigit() else 1
-                        reps_in = self.get_input(stdscr, "Reps per set: ")
+                        # Get sets
+                        sets = self.get_validated_input(
+                            stdscr,
+                            f"Sets for {name}",
+                            self.is_positive_int,
+                            default=1
+                        )
 
-                        if reps_in.isdigit():
-                            self.manager.log_progress(name, sets, int(reps_in))
-                            self.save_data()  # Persist changes
+                        # Get reps
+                        reps = self.get_validated_input(
+                            stdscr,
+                            f"Reps per set for {name}",
+                            self.is_positive_int
+                        )
+
+                        self.manager.log_progress(name, sets, int(reps))
+                        self.save_data()  # Persist changes
 
                 elif self.current_row == 3:  # Exit
                     self.running = False
