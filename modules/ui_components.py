@@ -9,9 +9,8 @@ class TimerWidget:
         self.BAR_FILLED = "█"
         self.BAR_EMPTY = "░"
 
-    def draw(self, stdscr, y, interval_seconds, seconds_left, width, start_x):
-        """Draws the progress bar at the specified y coordinate."""
-        # Calculate percentage: (Time Remaining / Total Time)
+    def draw(self, pad, interval_seconds, seconds_left, width):
+        """Draws the progress bar at the top of the provided pad."""
         total_seconds = max(1, interval_seconds)
         percent = max(0, min(1, seconds_left / total_seconds))
 
@@ -26,21 +25,19 @@ class TimerWidget:
         else:
             time_str = f"{mins:02d}:{secs:02d}"
 
-        # Add padding to the text for better spacing
-        time_str = f" {time_str} "
         text_start_in_bar = (usable_width - len(time_str)) // 2
 
-        # Draw the Box Border
-        stdscr.attron(curses.color_pair(Color.DIM))
-        stdscr.addch(y, start_x, curses.ACS_ULCORNER)
-        stdscr.addch(y, start_x + width - 1, curses.ACS_URCORNER)
-        stdscr.addch(y + 2, start_x, curses.ACS_LLCORNER)
-        stdscr.addch(y + 2, start_x + width - 1, curses.ACS_LRCORNER)
-        stdscr.hline(y, start_x + 1, curses.ACS_HLINE, usable_width)
-        stdscr.hline(y + 2, start_x + 1, curses.ACS_HLINE, usable_width)
-        stdscr.addch(y + 1, start_x, curses.ACS_VLINE)
-        stdscr.addch(y + 1, start_x + width - 1, curses.ACS_VLINE)
-        stdscr.attroff(curses.color_pair(Color.DIM))
+        # Draw the Box Border (Using 0,0 as origin)
+        pad.attron(curses.color_pair(Color.DIM))
+        pad.addch(0, 0, curses.ACS_ULCORNER)
+        pad.addch(0, width - 1, curses.ACS_URCORNER)
+        pad.addch(2, 0, curses.ACS_LLCORNER)
+        pad.addch(2, width - 1, curses.ACS_LRCORNER)
+        pad.hline(0, 1, curses.ACS_HLINE, usable_width)
+        pad.hline(2, 1, curses.ACS_HLINE, usable_width)
+        pad.addch(1, 0, curses.ACS_VLINE)
+        pad.addch(1, width - 1, curses.ACS_VLINE)
+        pad.attroff(curses.color_pair(Color.DIM))
 
         # Render the bar and text character by character
         for i in range(usable_width):
@@ -53,10 +50,9 @@ class TimerWidget:
             else:
                 char_to_draw = self.BAR_FILLED if i < filled_length else self.BAR_EMPTY
                 attr = curses.A_NORMAL
+            pad.addch(1, 1 + i, char_to_draw, attr)
 
-            stdscr.addch(y + 1, start_x + 1 + i, char_to_draw, attr)
-
-        return y + self.height
+        return self.height
 
 
 class BaseTable:
@@ -89,7 +85,7 @@ class BaseTable:
         self.show_header_border = show_header_border  # Store setting
         self.total_width = sum(h["width"] for h in headers) + (len(headers) * 2) + (len(headers) - 1) + 2
 
-    def draw_border(self, stdscr, y, x, pos="top"):
+    def draw_border(self, pad, y, x, pos="top"):
         # Set dividers
         if pos == "top":
             left, right, junction = self.BORDER_TOP_LEFT, self.BORDER_TOP_RIGHT, self.JUNCTION_TOP
@@ -113,92 +109,81 @@ class BaseTable:
                     line += self.BORDER_HORIZ
 
         line += right
-        stdscr.addstr(y, x, line)
+        pad.addstr(y, x, line)
 
-    def render_header_row(self, stdscr, y, x, color_id):
-        """Renders header where only text cells get background colors."""
+    def render_header_row(self, pad, y, x, color_id):
         current_x = x
 
         # Draw Left Border
-        stdscr.addstr(y, current_x, self.BORDER_SIDE)
+        pad.addstr(y, current_x, self.BORDER_SIDE)
         current_x += 1
 
         for i, h_cfg in enumerate(self.headers):
             content = self._format_cell(h_cfg["title"], h_cfg)
 
             # Apply color ONLY to the content block
-            stdscr.addstr(y, current_x, content, curses.color_pair(color_id))
+            pad.addstr(y, current_x, content, curses.color_pair(color_id))
             current_x += len(content)
 
             # Draw Divider (No background color)
             if i < len(self.headers) - 1:
-                stdscr.addstr(y, current_x, self.DIVIDER if self.show_col_borders else " ")
+                pad.addstr(y, current_x, self.DIVIDER if self.show_col_borders else " ")
                 current_x += 1
 
         # Draw Right Border
-        stdscr.addstr(y, current_x, self.BORDER_SIDE)
+        pad.addstr(y, current_x, self.BORDER_SIDE)
 
-    def render_row(self, stdscr, y, x, cells, color_id=None):
+    def render_row(self, pad, y, x, cells, color_id=None):
         current_x = x
-        stdscr.addstr(y, current_x, self.BORDER_SIDE)
+        pad.addstr(y, current_x, self.BORDER_SIDE)
         current_x += 1
 
         for i, cell in enumerate(cells):
             content = self._format_cell(cell, self.headers[i])
-
-            if color_id:
-                stdscr.attron(curses.color_pair(color_id))
-            stdscr.addstr(y, current_x, content)
-            if color_id:
-                stdscr.attroff(curses.color_pair(color_id))
-
+            attr = curses.color_pair(color_id) if color_id else curses.A_NORMAL
+            pad.addstr(y, current_x, content, attr)
             current_x += len(content)
 
             if i < len(self.headers) - 1:
-                stdscr.addstr(y, current_x, self.DIVIDER if self.show_col_borders else " ")
+                pad.addstr(y, current_x, self.DIVIDER if self.show_col_borders else " ")
                 current_x += 1
+        pad.addstr(y, current_x, self.BORDER_SIDE)
 
-        stdscr.addstr(y, current_x, self.BORDER_SIDE)
+    def render(self, pad, data_rows):
+        """Renders the entire table starting at 0,0 on the provided pad."""
+        current_y = 0
+        start_x = 0
 
-    def render(self, stdscr, y, w, data_rows, scroll_offset, max_rows, x_offset=None):
-        # If x_offset is provided, use it; otherwise, center the table
-        start_x = x_offset if x_offset is not None else max(0, (w - self.total_width) // 2)
-        current_y = y
-
-        # Bordered Title Section
         if self.show_title and self.title:
-            self.draw_border(stdscr, current_y, start_x, "top")
+            self.draw_border(pad, current_y, start_x, "top")
             title_padded = self.title.center(self.total_width - 2)
-            stdscr.addstr(current_y + 1, start_x, f"{self.BORDER_SIDE}{title_padded}{self.BORDER_SIDE}", curses.A_BOLD)
+            pad.addstr(current_y + 1, start_x, f"{self.BORDER_SIDE}{title_padded}{self.BORDER_SIDE}", curses.A_BOLD)
             current_y += 2
-            self.draw_border(stdscr, current_y, start_x, "mid")
+            self.draw_border(pad, current_y, start_x, "mid")
         else:
-            self.draw_border(stdscr, current_y, start_x, "top")
-
-        current_y += 1
+            self.draw_border(pad, current_y, start_x, "top")
 
         # Header Row
-        self.render_header_row(stdscr, current_y, start_x, self.header_color_id)
+        current_y += 1
+        self.render_header_row(pad, current_y, start_x, self.header_color_id)
         current_y += 1
 
         # Conditional Header Bottom Border
         if self.show_header_border:
-            self.draw_border(stdscr, current_y, start_x, "mid")
+            self.draw_border(pad, current_y, start_x, "mid")
             current_y += 1
 
         # Body Section
-        visible_items = data_rows[scroll_offset: scroll_offset + max_rows]
-        for i, row in enumerate(visible_items):
+        for i, row in enumerate(data_rows):
             if self.show_row_borders and i > 0:
-                self.draw_border(stdscr, current_y, start_x, "mid")
+                self.draw_border(pad, current_y, start_x, "mid")
                 current_y += 1
-            self.render_row(stdscr, current_y, start_x, row)
+            self.render_row(pad, current_y, start_x, row)
             current_y += 1
 
-        # Bottom Border
-        self.draw_border(stdscr, current_y, start_x, "bot")
+        self.draw_border(pad, current_y, start_x, "bot")
 
-        return current_y
+        return current_y + 1
 
     def _format_cell(self, text, header_cfg):
         """Uses the header object to determine padding and alignment."""
@@ -232,7 +217,7 @@ class WorkoutTable(BaseTable):
             show_header_border=False,
         )
 
-    def draw(self, stdscr, y, w, history_list, scroll_offset, x_offset):
+    def draw(self, pad, history_list):
         rows = []
         for item in history_list:
             # Convert Unix timestamp back to local time for display
@@ -242,7 +227,7 @@ class WorkoutTable(BaseTable):
 
             rows.append([display_time, sets_x_reps, item["name"]])
 
-        return self.render(stdscr, y, w, rows, scroll_offset, self.MAX_VISIBLE, x_offset=x_offset)
+        return self.render(pad, rows)
 
 class TotalsTable(BaseTable):
     MAX_VISIBLE = 8
@@ -261,7 +246,7 @@ class TotalsTable(BaseTable):
             show_header_border=False,
         )
 
-    def draw(self, stdscr, y, w, history_list, x_offset):
+    def draw(self, pad, history_list):
         # Aggregate totals from the history list of dictionaries
         totals = {}
         for item in history_list:
@@ -271,8 +256,8 @@ class TotalsTable(BaseTable):
             totals[name] = totals.get(name, 0) + volume
 
         rows = [[count, name] for name, count in totals.items()]
-        # Render with the specific x_offset
-        return self.render(stdscr, y, w, rows, 0, self.MAX_VISIBLE, x_offset=x_offset)
+
+        return self.render(pad, rows)
 
 
 class SelectionPopup:

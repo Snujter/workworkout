@@ -2,6 +2,7 @@ import curses
 
 
 CURSES_ESC_DELAY_TIME = '50' # the ESCDELAY setting expects a string
+CURSES_WAITING_TIME_IN_MILLISECONDS = 200
 
 
 class Color:
