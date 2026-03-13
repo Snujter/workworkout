@@ -199,8 +199,6 @@ class BaseTable:
             return f" {text.ljust(width)} "
 
 class WorkoutTable(BaseTable):
-    MAX_VISIBLE = 5
-
     def __init__(self):
         headers = [
             {"title": "Time", "width": 5, "align": "right"},
@@ -219,7 +217,9 @@ class WorkoutTable(BaseTable):
 
     def draw(self, pad, history_list):
         rows = []
-        for item in history_list:
+        # Sort history by newest first for better UX
+        sorted_history = sorted(history_list, key=lambda x: x['timestamp'], reverse=True)
+        for item in sorted_history:
             # Convert Unix timestamp back to local time for display
             display_time = datetime.fromtimestamp(item["timestamp"]).strftime("%H:%M")
             # Format the count column as "Sets x Reps"
