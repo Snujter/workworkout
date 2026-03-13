@@ -4,36 +4,28 @@ import json
 import os
 from datetime import datetime
 from modules.models import Settings, WorkoutManager
-from modules.ui_components import WorkoutTable, TotalsTable, SelectionPopup, TimerWidget
+from modules.ui_components import WorkoutTable, TotalsTable, TimerWidget
 from modules.theme import Color, CURSES_ESC_DELAY_TIME, CURSES_WAITING_TIME_IN_MILLISECONDS
+from modules.state import MainMenuState
+
 
 DATA_FILE = "workout_data.json"
 
 
-class WorkoutTUI:
-    # Class properties
-    manager: WorkoutManager
-    settings: Settings
-    table: WorkoutTable
-    totals_table: TotalsTable
-    running: bool
-    last_alert_time: float
-    alert_triggered: bool
-    scroll_offset: int
-    current_row: int
-    timer_widget: TimerWidget
+class WorkoutApp:
+    """The State Machine Controller."""
 
-    def __init__(self):  # Initialize state
+    def __init__(self):
         os.environ.setdefault('ESCDELAY', CURSES_ESC_DELAY_TIME)
 
         self.running = True
         self.last_alert_time = time.time()
-        self.alert_triggered = False
+        self.stdscr = None
+
+        # UI Components
         self.table = WorkoutTable()
         self.totals_table = TotalsTable()
         self.timer_widget = TimerWidget()
-        self.scroll_offset = 0
-        self.current_row = 0
 
         # Define pads
         self.bg_pad = None
@@ -48,141 +40,81 @@ class WorkoutTUI:
         # Load persisted data
         self.load_data()
 
+        # State Management
+        self.state = MainMenuState(self)
+
     def load_data(self):
-        """Populates existing settings and manager objects from JSON"""
         if os.path.exists(DATA_FILE):
-            try:
-                with open(DATA_FILE, "r") as f:
-                    raw = json.load(f)
-                    # Update existing objects instead of re-instantiating
-                    if "settings" in raw:
-                        self.settings.interval_seconds = raw["settings"].get("interval_seconds", 30)
-
-                    if "workouts" in raw:
-                        self.manager.workouts = raw["workouts"]
-
-                    if "history" in raw:
-                        self.manager.history = raw["history"]
-            except (json.JSONDecodeError, IOError):
-                # Fallback to defaults already set in __init__
-                self.save_data()
-        else:
-            self.save_data()
+            with open(DATA_FILE, "r") as f:
+                raw = json.load(f)
+                if "settings" in raw: self.settings.interval_seconds = raw["settings"].get("interval_seconds", 30)
+                if "workouts" in raw: self.manager.workouts = raw["workouts"]
+                if "history" in raw: self.manager.history = raw["history"]
 
     def save_data(self):
-        data = {
-            "settings": self.settings.to_dict(),
-            **self.manager.to_dict()
-        }
+        data = {"settings": self.settings.to_dict(), **self.manager.to_dict()}
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
 
-    def check_timer_alerts(self):
-        """Checks if the interval has elapsed and triggers audio/visual alerts."""
-        elapsed = time.time() - self.last_alert_time
-        threshold = self.settings.interval_seconds
+    def is_positive_int(self, val: str):
+        if val.isdigit() and int(val) > 0: return True, int(val), ""
+        return False, None, "Must be a positive integer."
 
-        if elapsed >= threshold:
-            # Trigger system beep
-            print("\a", end="", flush=True)
-
-            self.alert_triggered = True
-            self.last_alert_time = time.time()
-
-    def format_time(self, seconds):
-        """Converts seconds into H:M:S format"""
-        if seconds < 0: return "00h 00m 00s"
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
-        return f"{h:02d}h {m:02d}m {s:02d}s"
-
-    def get_input(self, stdscr, prompt):
-        """Helper to get text input with a clean buffer"""
-        h, w = stdscr.getmaxyx()
-
-        # Clear the input line and show prompt
-        stdscr.move(h - 2, 0)
-        stdscr.clrtoeol()
-        stdscr.addstr(h - 2, 2, prompt, curses.color_pair(Color.HEADER))
-
-        # Preparation for input
+    def get_validated_input(self, prompt, validation_func, default=None):
+        """Standardized blocking input with redraw."""
         curses.echo()
         curses.curs_set(1)
-        stdscr.nodelay(False)  # Wait for the user to actually type
-        curses.flushinp()  # Clear any pending 'Enter' keys from the menu
+        self.stdscr.nodelay(False)
+        result_val = None
+        error_msg = ""
 
-        try:
-            input_bytes = stdscr.getstr(h - 2, len(prompt) + 2)
-            result = input_bytes.decode('utf-8').strip()
-        except:
-            result = ""
+        while True:
+            self.render_all()
+            h, w = self.stdscr.getmaxyx()
+            if error_msg:
+                self.stdscr.addstr(0, 2, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
 
-        # Cleanup after input
+            display_p = f"{prompt} [{default}]: " if default else f"{prompt}: "
+            self.stdscr.move(h - 3, 2)
+            self.stdscr.clrtoeol()
+            self.stdscr.addstr(h - 3, 2, display_p, curses.color_pair(Color.HEADER))
+
+            try:
+                raw = self.stdscr.getstr().decode('utf-8').strip()
+                if not raw and default is not None:
+                    result_val = default
+                    break
+                valid, res, err = validation_func(raw)
+                if valid:
+                    result_val = res
+                    break
+                error_msg = err
+            except:
+                break
+
         curses.noecho()
         curses.curs_set(0)
-        stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
-        return result
+        self.stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
+        return result_val
 
-    def get_validated_input(self, stdscr, prompt, validation_func, default=None, error_pos=(0, 2)):
-        """Reusable input loop with validation and error rendering."""
-        error_msg = ""
-        while True:
-            self.render_main_ui(stdscr)
-            if error_msg:
-                y, x = error_pos
-                stdscr.addstr(y, x, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
+    def render_all(self):
+        h, w = self.stdscr.getmaxyx()
+        # Let the current state draw the background/menu
+        self.state.render(self.stdscr)
 
-            display_prompt = f"{prompt} (default {default}): " if default else f"{prompt}: "
-            val = self.get_input(stdscr, display_prompt)
-
-            # Handle default value if input is empty
-            if not val and default is not None:
-                return default
-
-            # Run validation
-            is_valid, result, err = validation_func(val)
-            if is_valid:
-                return result
-
-            error_msg = err
-
-    def is_positive_int(self, val: str):
-        if val.isdigit() and int(val) > 0:
-            return True, int(val), ""
-        return False, None, "Please enter a positive integer."
-
-    def render_main_ui(self, stdscr):
-        """Clears the screen and draws all persistent UI elements."""
-        h, w = stdscr.getmaxyx()
-
-        # Clear the Master Pad
-        self.bg_pad.erase()
-
-        # Draw non-component elements (Menu, Footer) to the Master Pad
-        menu_items = ["Log Activity", "Change Interval", "Settings", "Exit"]
-        menu_start_y = h - 7
-        for idx, item in enumerate(menu_items):
-            attr = curses.color_pair(Color.SELECTED) if idx == self.current_row else curses.A_NORMAL
-            self.bg_pad.addstr(menu_start_y + idx, (w - 20) // 2, f" {item} ", attr)
-
-        instructions = "ARROWS: Navigate | ENTER: Select | ESC: Back"
-        self.bg_pad.addstr(h - 2, (w - len(instructions)) // 2, instructions, curses.color_pair(Color.DIM))
-
-        # Refresh the Master Pad first (Bottom Layer)
-        self.bg_pad.noutrefresh(0, 0, 0, 0, h - 1, w - 1)
-
+        # Draw Global Components (Timer, Tables)
         gap = 4
-        total_combined_width = self.table.total_width + gap + self.totals_table.total_width
-        start_x = max(2, (w - total_combined_width) // 2)
+        total_w = self.table.total_width + gap + self.totals_table.total_width
+        start_x = max(2, (w - total_w) // 2)
 
-        # Draw Timer Pad
+        # Draw timer
         self.timer_pad.erase()
-        time_left = max(0, int(self.settings.interval_seconds - (time.time() - self.last_alert_time)))
-        self.timer_widget.draw(self.timer_pad, self.settings.interval_seconds, time_left, total_combined_width)
-        self.timer_pad.noutrefresh(0, 0, 2, start_x, 5, start_x + total_combined_width)
+        elapsed = time.time() - self.last_alert_time
+        time_left = max(0, int(self.settings.interval_seconds - elapsed))
+        self.timer_widget.draw(self.timer_pad, self.settings.interval_seconds, time_left, total_w)
+        self.timer_pad.noutrefresh(0, 0, 2, start_x, 5, start_x + total_w)
 
-        # Draw History and Totals Pads
+        # Tables
         self.workout_history_pad.erase()
         self.workout_totals_pad.erase()
         today = datetime.now().strftime("%Y-%m-%d")
@@ -191,83 +123,44 @@ class WorkoutTUI:
         self.table.draw(self.workout_history_pad, history)
         self.totals_table.draw(self.workout_totals_pad, history)
 
+        # Refresh virtual tables
         log_y = 6
-        self.workout_history_pad.noutrefresh(self.scroll_offset, 0, log_y, start_x, h - 8, start_x + self.table.total_width)
+        self.workout_history_pad.noutrefresh(0, 0, log_y, start_x, h - 8, start_x + self.table.total_width)
+        self.workout_totals_pad.noutrefresh(0, 0, log_y, start_x + self.table.total_width + gap, h - 8, w - 1)
 
-        totals_x = start_x + self.table.total_width + gap
-        self.workout_totals_pad.noutrefresh(0, 0, log_y, totals_x, h - 8, totals_x + self.totals_table.total_width)
-
-        # Single Physical Update
+        # Single physical update
         curses.doupdate()
 
-    def main(self, stdscr):
+    def main_loop(self, stdscr):
         # Initial Curses Setup
-        curses.curs_set(0)
+        self.stdscr = stdscr
         curses.start_color()
         Color.setup()
 
         stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
 
-        # Define Pad sizes
         h, w = stdscr.getmaxyx()
+
+        # Define Pad sizes
         self.bg_pad = curses.newpad(h, w)
-        self.timer_pad = curses.newpad(5, 120)
-        self.workout_history_pad = curses.newpad(100, 60)
-        self.workout_totals_pad = curses.newpad(100, 60)
+        self.timer_pad = curses.newpad(5, 150)
+        self.workout_history_pad = curses.newpad(100, 80)
+        self.workout_totals_pad = curses.newpad(100, 80)
 
         while self.running:
-            # Draw everything
-            self.render_main_ui(stdscr)
+            self.render_all()
 
-            # Check for timer alerts
-            self.check_timer_alerts()
+            # Timer Alert Logic
+            if (time.time() - self.last_alert_time) >= self.settings.interval_seconds:
+                print("\a", end="", flush=True)
+                self.last_alert_time = time.time()
 
             # Wait for input
             key = stdscr.getch()
-
-            # No key was pressed
-            if key == -1:
-                continue
-
-            # Handle Navigation
-            if key == curses.KEY_UP:
-                self.current_row = (self.current_row - 1) % 4
-            elif key == curses.KEY_DOWN:
-                self.current_row = (self.current_row + 1) % 4
-
-            # Handle Selection
-            elif key in [10, 13, curses.KEY_ENTER]:
-                if self.current_row == 0:  # Log Activity
-                    # Show selection popup
-                    popup = SelectionPopup("Select Workout", self.manager.workouts)
-                    name = popup.draw(stdscr)
-
-                    if name:
-                        # Get sets
-                        sets = self.get_validated_input(
-                            stdscr,
-                            f"Sets for {name}",
-                            self.is_positive_int,
-                            default=1
-                        )
-
-                        # Get reps
-                        reps = self.get_validated_input(
-                            stdscr,
-                            f"Reps per set for {name}",
-                            self.is_positive_int
-                        )
-
-                        self.manager.log_progress(name, sets, int(reps))
-                        self.save_data()  # Persist changes
-
-                elif self.current_row == 3:  # Exit
-                    self.running = False
-
-            elif key == 27:  # Global ESC to exit
-                self.running = False
+            if key != -1:
+                self.state.handle_input(key)
 
 
 if __name__ == "__main__":
-    app = WorkoutTUI()
-    curses.wrapper(app.main)
+    app = WorkoutApp()
+    curses.wrapper(app.main_loop)
