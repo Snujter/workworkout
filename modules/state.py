@@ -26,16 +26,20 @@ class BaseState:
         if self.active_popup:
             if key == curses.KEY_UP:
                 self.popup_index = (self.popup_index - 1) % len(self.active_popup.options)
+                self.on_popup_nav()
             elif key == curses.KEY_DOWN:
                 self.popup_index = (self.popup_index + 1) % len(self.active_popup.options)
+                self.on_popup_nav()
             elif key in [10, 13, curses.KEY_ENTER]:
                 selection = self.active_popup.options[self.popup_index]
                 callback = self.popup_callback
                 self.active_popup = None  # Close before callback in case callback opens a NEW popup
                 if callback:
                     callback(selection)
+                self.on_popup_enter()
             elif key == 27:
                 self.active_popup = None
+                self.on_popup_back()
             return  # Block main state input
 
         # Other state logic
@@ -62,6 +66,18 @@ class BaseState:
     def on_back(self):
         """Default behavior for ESC: return to previous state or exit."""
         self.app.running = False
+
+    def on_popup_nav(self):
+        """Optional hook for sound effects or side effects on navigation."""
+        pass
+
+    def on_popup_enter(self):
+        """Required hook: What happens when Enter is pressed."""
+        pass
+
+    def on_popup_back(self):
+        """Default behavior for ESC: return to previous state or exit."""
+        pass
 
     def render(self, stdscr):
         """Common rendering logic for menu-based states."""
