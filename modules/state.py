@@ -16,11 +16,6 @@ class BaseState:
         self.popup_index = 0
         self.popup_callback = None
 
-        # UI Components
-        self.table = WorkoutTable()
-        self.totals_table = TotalsTable()
-        self.timer_widget = TimerWidget()
-
     def open_popup(self, title, options, callback):
         """Helper to trigger a popup from any child state."""
         self.active_popup = SelectionPopup(title, options)
@@ -135,6 +130,11 @@ class MainMenuState(BaseState):
     def __init__(self, app):
         super().__init__(app)
         self.options = ["Log Activity", "Change Interval", "Settings", "Exit"]
+
+        # UI Components
+        self.table = WorkoutTable()
+        self.totals_table = TotalsTable()
+        self.timer_widget = TimerWidget()
 
     def on_enter(self):
         """Specific logic for the main menu."""
