@@ -264,49 +264,24 @@ class SelectionPopup:
     def __init__(self, title, options):
         self.title = title
         self.options = options
-        self.selected_idx = 0
+        # Dimensions are static properties of the content
+        self.height = len(self.options) + 5
+        self.width = max(len(self.title), max(len(o) for o in self.options)) + 8
 
-    def draw(self, stdscr):
-        h, w = stdscr.getmaxyx()
-        popup_h = len(self.options) + 5
-        popup_w = max(len(self.title), max(len(o) for o in self.options)) + 8
-        start_y = (h - popup_h) // 2
-        start_x = (w - popup_w) // 2
+    def draw(self, pad, selected_idx):
+        """Purely visual: Draws the state passed to it."""
+        pad.erase()
 
-        while True:
-            # Draw Background
-            for i in range(popup_h):
-                stdscr.addstr(start_y + i, start_x, " " * popup_w, curses.color_pair(Color.HEADER))
+        # Draw Box Borders
+        pad.attron(curses.color_pair(Color.HEADER))
+        pad.border()  # Shortcut for basic borders, or use your custom manual logic
 
-            # Draw Box Borders
-            stdscr.attron(curses.color_pair(Color.HEADER))
-            stdscr.addch(start_y, start_x, curses.ACS_ULCORNER)
-            stdscr.addch(start_y, start_x + popup_w - 1, curses.ACS_URCORNER)
-            stdscr.addch(start_y + popup_h - 1, start_x, curses.ACS_LLCORNER)
-            stdscr.addch(start_y + popup_h - 1, start_x + popup_w - 1, curses.ACS_LRCORNER)
-            stdscr.hline(start_y, start_x + 1, curses.ACS_HLINE, popup_w - 2)
-            stdscr.hline(start_y + popup_h - 1, start_x + 1, curses.ACS_HLINE, popup_w - 2)
-            stdscr.vline(start_y + 1, start_x, curses.ACS_VLINE, popup_h - 2)
-            stdscr.vline(start_y + 1, start_x + popup_w - 1, curses.ACS_VLINE, popup_h - 2)
+        # Title
+        pad.addstr(1, (self.width - len(self.title)) // 2, self.title, curses.A_BOLD)
+        pad.attroff(curses.color_pair(Color.HEADER))
 
-            stdscr.addstr(start_y + 1, start_x + (popup_w - len(self.title)) // 2, self.title, curses.A_BOLD)
-            stdscr.attroff(curses.color_pair(Color.HEADER))
-
-            # Render Options
-            for idx, option in enumerate(self.options):
-                attr = curses.color_pair(Color.SELECTED) if idx == self.selected_idx else curses.color_pair(
-                    Color.HEADER)
-                line = f" {option} ".center(popup_w - 2)
-                stdscr.addstr(start_y + 3 + idx, start_x + 1, line, attr)
-
-            stdscr.refresh()
-
-            key = stdscr.getch()
-            if key == curses.KEY_UP:
-                self.selected_idx = (self.selected_idx - 1) % len(self.options)
-            elif key == curses.KEY_DOWN:
-                self.selected_idx = (self.selected_idx + 1) % len(self.options)
-            elif key in [10, 13, curses.KEY_ENTER]:
-                return self.options[self.selected_idx]
-            elif key == 27:  # ESC
-                return None
+        # Render Options based on the index provided by the State
+        for idx, option in enumerate(self.options):
+            attr = curses.color_pair(Color.SELECTED) if idx == selected_idx else curses.color_pair(Color.HEADER)
+            line = f" {option} ".center(self.width - 2)
+            pad.addstr(3 + idx, 1, line, attr)
