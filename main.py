@@ -2,9 +2,7 @@ import curses
 import time
 import json
 import os
-from datetime import datetime
 from modules.models import Settings, WorkoutManager
-from modules.ui_components import WorkoutTable, TotalsTable, TimerWidget
 from modules.theme import Color, CURSES_ESC_DELAY_TIME, CURSES_WAITING_TIME_IN_MILLISECONDS
 from modules.state import MainMenuState
 
@@ -21,11 +19,6 @@ class WorkoutApp:
         self.running = True
         self.last_alert_time = time.time()
         self.stdscr = None
-
-        # UI Components
-        self.table = WorkoutTable()
-        self.totals_table = TotalsTable()
-        self.timer_widget = TimerWidget()
 
         # Define pads
         self.bg_pad = None
@@ -98,38 +91,8 @@ class WorkoutApp:
         return result_val
 
     def render_all(self):
-        h, w = self.stdscr.getmaxyx()
         # Let the current state draw the background/menu
         self.state.render(self.stdscr)
-
-        # Draw Global Components (Timer, Tables)
-        gap = 4
-        total_w = self.table.total_width + gap + self.totals_table.total_width
-        start_x = max(2, (w - total_w) // 2)
-
-        # Draw timer
-        self.timer_pad.erase()
-        elapsed = time.time() - self.last_alert_time
-        time_left = max(0, int(self.settings.interval_seconds - elapsed))
-        self.timer_widget.draw(self.timer_pad, self.settings.interval_seconds, time_left, total_w)
-        self.timer_pad.noutrefresh(0, 0, 2, start_x, 5, start_x + total_w)
-
-        # Tables
-        self.workout_history_pad.erase()
-        self.workout_totals_pad.erase()
-        today = datetime.now().strftime("%Y-%m-%d")
-        history = self.manager.history.get(today, [])
-
-        self.table.draw(self.workout_history_pad, history)
-        self.totals_table.draw(self.workout_totals_pad, history)
-
-        # Refresh virtual tables
-        log_y = 6
-        self.workout_history_pad.noutrefresh(0, 0, log_y, start_x, h - 8, start_x + self.table.total_width)
-        self.workout_totals_pad.noutrefresh(0, 0, log_y, start_x + self.table.total_width + gap, h - 8, w - 1)
-
-        # Single physical update
-        curses.doupdate()
 
     def main_loop(self, stdscr):
         # Initial Curses Setup

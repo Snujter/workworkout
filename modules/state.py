@@ -1,6 +1,8 @@
+import time
+from datetime import datetime
 import curses
 from modules.theme import Color
-from modules.ui_components import SelectionPopup
+from modules.ui_components import SelectionPopup, WorkoutTable, TotalsTable, TimerWidget
 
 
 class BaseState:
@@ -13,6 +15,11 @@ class BaseState:
         self.active_popup = None
         self.popup_index = 0
         self.popup_callback = None
+
+        # UI Components
+        self.table = WorkoutTable()
+        self.totals_table = TotalsTable()
+        self.timer_widget = TimerWidget()
 
     def open_popup(self, title, options, callback):
         """Helper to trigger a popup from any child state."""
@@ -84,30 +91,50 @@ class BaseState:
         # Render background
         h, w = stdscr.getmaxyx()
         self.app.bg_pad.erase()
-        self.draw_content(h, w)
+        self.draw_background(h, w)
         self.app.bg_pad.noutrefresh(0, 0, 0, 0, h - 1, w - 1)
+
+        # Render content
+        self.draw_content(h, w)
 
         # Render overlay
         if self.active_popup:
-            # Re-use a dedicated popup pad from the app to avoid memory fragmentation
-            p_h, p_w = self.active_popup.height, self.active_popup.width
-            pop_pad = curses.newpad(p_h, p_w)
-            self.active_popup.draw(pop_pad, self.popup_index)
+            self.draw_popup(h, w)
+        else:
+            self.draw_foreground(h, w)
 
-            y = (h - p_h) // 2
-            x = (w - p_w) // 2
-            pop_pad.noutrefresh(0, 0, y, x, y + p_h, x + p_w)
+        # Single physical update
+        curses.doupdate()
+
+    # --- Hooks for Child Classes ---
+    def draw_background(self, h, w):
+        """Override to add persistent UI like headers/stats to the bg_pad."""
+        pass
 
     def draw_content(self, h, w):
         """Child classes implement the actual UI drawing here."""
         raise NotImplementedError
+
+    def draw_foreground(self, h, w):
+        """Override for UI elements that should sit above content (tooltips, etc)."""
+        pass
+
+    def draw_popup(self, h, w):
+        """Popup."""
+        # Re-use a dedicated popup pad from the app to avoid memory fragmentation
+        p_h, p_w = self.active_popup.height, self.active_popup.width
+        pop_pad = curses.newpad(p_h, p_w)
+        self.active_popup.draw(pop_pad, self.popup_index)
+
+        y = (h - p_h) // 2
+        x = (w - p_w) // 2
+        pop_pad.noutrefresh(0, 0, y, x, y + p_h, x + p_w)
 
 
 class MainMenuState(BaseState):
     def __init__(self, app):
         super().__init__(app)
         self.options = ["Log Activity", "Change Interval", "Settings", "Exit"]
-        self.selected_workout = None
 
     def on_enter(self):
         """Specific logic for the main menu."""
@@ -123,15 +150,8 @@ class MainMenuState(BaseState):
         self.open_popup(
             title="Select Workout",
             options=self.app.manager.workouts,
-            callback=self.update_selected_workout
+            callback=self.handle_workout_select_popup
         )
-
-        if self.selected_workout:
-            sets = self.app.get_validated_input(f"Sets for {self.selected_workout}", self.app.is_positive_int, default=1)
-            reps = self.app.get_validated_input(f"Reps for {self.selected_workout}", self.app.is_positive_int)
-            if sets and reps:
-                self.app.manager.log_progress(self.selected_workout, sets, int(reps))
-                self.app.save_data()
 
     def change_interval_flow(self):
         new_int = self.app.get_validated_input("New Interval (sec)", self.app.is_positive_int)
@@ -139,11 +159,19 @@ class MainMenuState(BaseState):
             self.app.settings.interval_seconds = new_int
             self.app.save_data()
 
-    def update_selected_workout(self, workout_name: str):
-        self.selected_workout = workout_name
+    def handle_workout_select_popup(self, workout_name: str):
+        # Exit early if no workout was selected
+        if not workout_name:
+            return
 
-    def draw_content(self, h, w):
-        """The child only cares about HOW the menu looks."""
+        # Get input for sets and reps
+        sets = self.app.get_validated_input(f"Sets for {workout_name}", self.app.is_positive_int, default=1)
+        reps = self.app.get_validated_input(f"Reps for {workout_name}", self.app.is_positive_int)
+        if sets and reps:
+            self.app.manager.log_progress(workout_name, sets, int(reps))
+            self.app.save_data()
+
+    def draw_background(self, h, w):
         # Draw menu options
         menu_start_y = h - 7
         for idx, item in enumerate(self.options):
@@ -153,3 +181,31 @@ class MainMenuState(BaseState):
         # Draw menu footer
         instructions = "ARROWS: Navigate | ENTER: Select | ESC: Exit"
         self.app.bg_pad.addstr(h - 2, (w - len(instructions)) // 2, instructions, curses.color_pair(Color.DIM))
+
+    def draw_content(self, h, w):
+        """The child only cares about HOW the menu looks."""
+        # Draw Global Components (Timer, Tables)
+        gap = 4
+        total_w = self.table.total_width + gap + self.totals_table.total_width
+        start_x = max(2, (w - total_w) // 2)
+
+        # Draw timer
+        self.app.timer_pad.erase()
+        elapsed = time.time() - self.app.last_alert_time
+        time_left = max(0, int(self.app.settings.interval_seconds - elapsed))
+        self.timer_widget.draw(self.app.timer_pad, self.app.settings.interval_seconds, time_left, total_w)
+        self.app.timer_pad.noutrefresh(0, 0, 2, start_x, 5, start_x + total_w)
+
+        # Tables
+        self.app.workout_history_pad.erase()
+        self.app.workout_totals_pad.erase()
+        today = datetime.now().strftime("%Y-%m-%d")
+        history = self.app.manager.history.get(today, [])
+
+        self.table.draw(self.app.workout_history_pad, history)
+        self.totals_table.draw(self.app.workout_totals_pad, history)
+
+        # Refresh virtual tables
+        log_y = 6
+        self.app.workout_history_pad.noutrefresh(0, 0, log_y, start_x, h - 8, start_x + self.table.total_width)
+        self.app.workout_totals_pad.noutrefresh(0, 0, log_y, start_x + self.table.total_width + gap, h - 8, w - 1)
