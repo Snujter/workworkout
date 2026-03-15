@@ -57,62 +57,6 @@ class WorkoutApp:
             return True, int(val), ""
         return False, None, "Must be a positive integer."
 
-    def _setup_input_mode(self):
-        """Prepare curses environment for blocking user input."""
-        curses.echo()
-        curses.curs_set(1)
-        self.stdscr.nodelay(False)
-
-    def _restore_input_mode(self):
-        """Restore curses environment to standard non-blocking mode."""
-        curses.noecho()
-        curses.curs_set(0)
-        self.stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
-
-    def _draw_input_prompt(self, prompt, default, error_msg):
-        """Render the input prompt line and any validation errors."""
-        height, _ = self.stdscr.getmaxyx()
-
-        if error_msg:
-            self.stdscr.addstr(0, 2, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
-
-        display_prompt = f"{prompt} [{default}]: " if default else f"{prompt}: "
-        self.stdscr.move(height - 3, 2)
-        self.stdscr.clrtoeol()
-        self.stdscr.addstr(height - 3, 2, display_prompt, curses.color_pair(Color.HEADER))
-
-    def get_validated_input(self, prompt, validation_func, default=None):
-        """Standardized blocking input with redraw."""
-        self._setup_input_mode()
-
-        result_val = None
-        error_msg = ""
-
-        while True:
-            self.render_all()
-            self._draw_input_prompt(prompt, default, error_msg)
-
-            try:
-                raw_input = self.stdscr.getstr().decode('utf-8').strip()
-
-                # Check for default fallback
-                if not raw_input and default is not None:
-                    result_val = default
-                    break
-
-                # Validate input
-                is_valid, parsed_result, err = validation_func(raw_input)
-                if is_valid:
-                    result_val = parsed_result
-                    break
-
-                error_msg = err
-            except Exception:
-                break
-
-        self._restore_input_mode()
-        return result_val
-
     def render_all(self):
         # Let the current state draw the background/menu
         self.state.render(self.stdscr)

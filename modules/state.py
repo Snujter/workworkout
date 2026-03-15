@@ -1,7 +1,7 @@
 import time
 from datetime import datetime
 import curses
-from modules.theme import Color
+from modules.theme import Color, CURSES_WAITING_TIME_IN_MILLISECONDS
 from modules.ui_components import SelectionPopup, WorkoutTable, TotalsTable, TimerWidget
 
 
@@ -15,6 +15,55 @@ class BaseState:
         self.active_popup = None
         self.popup_index = 0
         self.popup_callback = None
+
+    def _setup_input_mode(self, stdscr):
+        curses.echo()
+        curses.curs_set(1)
+        stdscr.nodelay(False)
+
+    def _restore_input_mode(self, stdscr):
+        curses.noecho()
+        curses.curs_set(0)
+        stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
+
+    def _draw_input_prompt(self, stdscr, prompt, default, error_msg):
+        height, _ = stdscr.getmaxyx()
+        if error_msg:
+            stdscr.addstr(0, 2, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
+
+        display_prompt = f"{prompt} [{default}]: " if default else f"{prompt}: "
+        stdscr.move(height - 3, 2)
+        stdscr.clrtoeol()
+        stdscr.addstr(height - 3, 2, display_prompt, curses.color_pair(Color.HEADER))
+
+    def get_input(self, prompt, validation_func, default=None):
+        """Standardized blocking input with redraw logic."""
+        stdscr = self.app.stdscr
+        self._setup_input_mode(stdscr)
+
+        result_val = None
+        error_msg = ""
+
+        while True:
+            self.render(stdscr)
+            self._draw_input_prompt(stdscr, prompt, default, error_msg)
+
+            try:
+                raw_input = stdscr.getstr().decode('utf-8').strip()
+                if not raw_input and default is not None:
+                    result_val = default
+                    break
+
+                is_valid, parsed_result, err = validation_func(raw_input)
+                if is_valid:
+                    result_val = parsed_result
+                    break
+                error_msg = err
+            except Exception:
+                break
+
+        self._restore_input_mode(stdscr)
+        return result_val
 
     def open_popup(self, title, options, callback):
         """Helper to trigger a popup from any child state."""
@@ -101,7 +150,6 @@ class BaseState:
         # Single physical update
         curses.doupdate()
 
-    # --- Hooks for Child Classes ---
     def draw_background(self, h, w):
         """Override to add persistent UI like headers/stats to the bg_pad."""
         pass
@@ -154,7 +202,7 @@ class MainMenuState(BaseState):
         )
 
     def change_interval_flow(self):
-        new_int = self.app.get_validated_input("New Interval (sec)", self.app.is_positive_int)
+        new_int = self.get_input("New Interval (sec)", self.app.is_positive_int)
         if new_int:
             self.app.settings.interval_seconds = new_int
             self.app.save_data()
@@ -165,8 +213,8 @@ class MainMenuState(BaseState):
             return
 
         # Get input for sets and reps
-        sets = self.app.get_validated_input(f"Sets for {workout_name}", self.app.is_positive_int, default=1)
-        reps = self.app.get_validated_input(f"Reps for {workout_name}", self.app.is_positive_int)
+        sets = self.get_input(f"Sets for {workout_name}", self.app.is_positive_int, default=1)
+        reps = self.get_input(f"Reps for {workout_name}", self.app.is_positive_int)
         if sets and reps:
             self.app.manager.log_progress(workout_name, sets, int(reps))
             self.app.save_data()
