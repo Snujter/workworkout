@@ -15,7 +15,6 @@ class WorkoutApp:
 
     def __init__(self):
         os.environ.setdefault('ESCDELAY', CURSES_ESC_DELAY_TIME)
-
         self.running = True
         self.last_alert_time = time.time()
         self.stdscr = None
@@ -40,9 +39,13 @@ class WorkoutApp:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, "r") as f:
                 raw = json.load(f)
-                if "settings" in raw: self.settings.interval_seconds = raw["settings"].get("interval_seconds", 30)
-                if "workouts" in raw: self.manager.workouts = raw["workouts"]
-                if "history" in raw: self.manager.history = raw["history"]
+
+                if "settings" in raw:
+                    self.settings.interval_seconds = raw["settings"].get("interval_seconds", 30)
+                if "workouts" in raw:
+                    self.manager.workouts = raw["workouts"]
+                if "history" in raw:
+                    self.manager.history = raw["history"]
 
     def save_data(self):
         data = {"settings": self.settings.to_dict(), **self.manager.to_dict()}
@@ -50,44 +53,64 @@ class WorkoutApp:
             json.dump(data, f, indent=4)
 
     def is_positive_int(self, val: str):
-        if val.isdigit() and int(val) > 0: return True, int(val), ""
+        if val.isdigit() and int(val) > 0:
+            return True, int(val), ""
         return False, None, "Must be a positive integer."
 
-    def get_validated_input(self, prompt, validation_func, default=None):
-        """Standardized blocking input with redraw."""
+    def _setup_input_mode(self):
+        """Prepare curses environment for blocking user input."""
         curses.echo()
         curses.curs_set(1)
         self.stdscr.nodelay(False)
+
+    def _restore_input_mode(self):
+        """Restore curses environment to standard non-blocking mode."""
+        curses.noecho()
+        curses.curs_set(0)
+        self.stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
+
+    def _draw_input_prompt(self, prompt, default, error_msg):
+        """Render the input prompt line and any validation errors."""
+        height, _ = self.stdscr.getmaxyx()
+
+        if error_msg:
+            self.stdscr.addstr(0, 2, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
+
+        display_prompt = f"{prompt} [{default}]: " if default else f"{prompt}: "
+        self.stdscr.move(height - 3, 2)
+        self.stdscr.clrtoeol()
+        self.stdscr.addstr(height - 3, 2, display_prompt, curses.color_pair(Color.HEADER))
+
+    def get_validated_input(self, prompt, validation_func, default=None):
+        """Standardized blocking input with redraw."""
+        self._setup_input_mode()
+
         result_val = None
         error_msg = ""
 
         while True:
             self.render_all()
-            h, w = self.stdscr.getmaxyx()
-            if error_msg:
-                self.stdscr.addstr(0, 2, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
-
-            display_p = f"{prompt} [{default}]: " if default else f"{prompt}: "
-            self.stdscr.move(h - 3, 2)
-            self.stdscr.clrtoeol()
-            self.stdscr.addstr(h - 3, 2, display_p, curses.color_pair(Color.HEADER))
+            self._draw_input_prompt(prompt, default, error_msg)
 
             try:
-                raw = self.stdscr.getstr().decode('utf-8').strip()
-                if not raw and default is not None:
+                raw_input = self.stdscr.getstr().decode('utf-8').strip()
+
+                # Check for default fallback
+                if not raw_input and default is not None:
                     result_val = default
                     break
-                valid, res, err = validation_func(raw)
-                if valid:
-                    result_val = res
+
+                # Validate input
+                is_valid, parsed_result, err = validation_func(raw_input)
+                if is_valid:
+                    result_val = parsed_result
                     break
+
                 error_msg = err
-            except:
+            except Exception:
                 break
 
-        curses.noecho()
-        curses.curs_set(0)
-        self.stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
+        self._restore_input_mode()
         return result_val
 
     def render_all(self):
@@ -101,11 +124,10 @@ class WorkoutApp:
         Color.setup()
 
         stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
-
-        h, w = stdscr.getmaxyx()
+        height, width = stdscr.getmaxyx()
 
         # Define Pad sizes
-        self.bg_pad = curses.newpad(h, w)
+        self.bg_pad = curses.newpad(height, width)
         self.timer_pad = curses.newpad(5, 150)
         self.workout_history_pad = curses.newpad(100, 80)
         self.workout_totals_pad = curses.newpad(100, 80)
