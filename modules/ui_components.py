@@ -285,3 +285,27 @@ class SelectionPopup:
             attr = curses.color_pair(Color.SELECTED) if idx == selected_idx else curses.color_pair(Color.HEADER)
             line = f" {option} ".center(self.width - 2)
             pad.addstr(3 + idx, 1, line, attr)
+
+
+class InputBox:
+    """UI Component for text input prompts."""
+
+    def __init__(self, prompt, default=None, error_msg=""):
+        self.prompt = prompt
+        self.default = default
+        self.error_msg = error_msg
+
+    def draw(self, pad, h, w):
+        """Draws the prompt into the provided pad area."""
+        pad.erase()
+
+        # Draw error if exists at the top of the pad
+        if self.error_msg:
+            pad.addstr(0, 0, f" ERROR: {self.error_msg} ", curses.color_pair(Color.ALERT))
+
+        # Format prompt
+        display_prompt = f"{self.prompt} [{self.default}]: " if self.default else f"{self.prompt}: "
+
+        # Draw the prompt on the second line of the pad
+        pad.addstr(1, 0, display_prompt, curses.color_pair(Color.HEADER))
+        return len(display_prompt)

@@ -2,7 +2,7 @@ import time
 from datetime import datetime
 import curses
 from modules.theme import Color, CURSES_WAITING_TIME_IN_MILLISECONDS
-from modules.ui_components import SelectionPopup, WorkoutTable, TotalsTable, TimerWidget
+from modules.ui_components import SelectionPopup, WorkoutTable, TotalsTable, TimerWidget, InputBox
 
 
 class BaseState:
@@ -37,19 +37,40 @@ class BaseState:
         stdscr.addstr(height - 3, 2, display_prompt, curses.color_pair(Color.HEADER))
 
     def get_input(self, prompt, validation_func, default=None):
-        """Standardized blocking input with redraw logic."""
+        """Standardized blocking input using a dedicated transient pad."""
         stdscr = self.app.stdscr
         self._setup_input_mode(stdscr)
 
         result_val = None
         error_msg = ""
+        input_box = InputBox(prompt, default, error_msg)
+
+        # Create a pad for the input area (3 rows high, full width)
+        # Positioned near the bottom of the screen
+        h, w = stdscr.getmaxyx()
+        input_pad_h = 3
+        input_pad = curses.newpad(input_pad_h, w)
+        input_y = h - 4  # 4 lines from bottom
 
         while True:
+            # Render the rest of the UI (Tables, Timer, etc.)
             self.render(stdscr)
-            self._draw_input_prompt(stdscr, prompt, default, error_msg)
+
+            # Update and draw the Input Box pad
+            input_box.error_msg = error_msg
+            prompt_len = input_box.draw(input_pad, input_pad_h, w)
+
+            # Refresh the input pad onto the screen
+            input_pad.noutrefresh(0, 0, input_y, 2, input_y + input_pad_h, w - 2)
+
+            # Move physical cursor to the end of the prompt on the screen
+            stdscr.move(input_y + 1, 2 + prompt_len)
+            curses.doupdate()
 
             try:
+                # getstr() handles the echo and cursor movement
                 raw_input = stdscr.getstr().decode('utf-8').strip()
+
                 if not raw_input and default is not None:
                     result_val = default
                     break
@@ -58,6 +79,7 @@ class BaseState:
                 if is_valid:
                     result_val = parsed_result
                     break
+
                 error_msg = err
             except Exception:
                 break
