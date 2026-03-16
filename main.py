@@ -53,7 +53,7 @@ class WorkoutApp:
             json.dump(data, f, indent=4)
 
     def is_positive_int(self, val: str):
-        if val.isdigit() and int(val) > 0:
+        if str(val).isdigit() and int(val) > 0:
             return True, int(val), ""
         return False, None, "Must be a positive integer."
 
