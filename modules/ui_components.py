@@ -288,24 +288,41 @@ class SelectionPopup:
 
 
 class InputBox:
-    """UI Component for text input prompts."""
+    """UI Component for non-blocking text input."""
 
     def __init__(self, prompt, default=None, error_msg=""):
         self.prompt = prompt
         self.default = default
+        self.buffer = ""
         self.error_msg = error_msg
 
-    def draw(self, pad, h, w):
-        """Draws the prompt into the provided pad area."""
-        pad.erase()
-
-        # Draw error if exists at the top of the pad
+    def draw(self, pad, y, x, max_w):
+        """Draws the prompt into the provided pad area at specific coordinates."""
+        # Draw error message if it exists (on the line above the input)
         if self.error_msg:
-            pad.addstr(0, 0, f" ERROR: {self.error_msg} ", curses.color_pair(Color.ALERT))
+            # Clip the error message to max_w to prevent wrap-around crashes
+            error_text = f" ERROR: {self.error_msg} "[:max_w]
+            pad.addstr(y, x, error_text, curses.color_pair(Color.ALERT))
 
-        # Format prompt
+        # Format and draw the prompt
         display_prompt = f"{self.prompt} [{self.default}]: " if self.default else f"{self.prompt}: "
 
-        # Draw the prompt on the second line of the pad
-        pad.addstr(1, 0, display_prompt, curses.color_pair(Color.HEADER))
-        return len(display_prompt)
+        # We use y + 1 to place the prompt below the error message line
+        pad.addstr(y + 1, x, display_prompt[:max_w], curses.color_pair(Color.HEADER))
+
+        # Draw the current buffer
+        # Calculate how much space is left for the text buffer
+        buffer_x_offset = x + len(display_prompt)
+        remaining_space = max_w - len(display_prompt)
+
+        if remaining_space > 0:
+            # Only draw the part of the buffer that fits on the screen
+            pad.addstr(y + 1, buffer_x_offset, self.buffer[:remaining_space])
+
+        # Return cursor position relative to the pad (for move_cursor calls)
+        # This helps the main loop know where to place the physical terminal cursor
+        cursor_y = y + 1
+        cursor_x = buffer_x_offset + len(self.buffer)
+
+        # Ensure the cursor doesn't go past the edge of the defined width
+        return cursor_y, min(cursor_x, x + max_w)

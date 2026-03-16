@@ -12,9 +12,52 @@ class BaseState:
         self.app = app
         self.selection_index = 0
         self.options = []  # Child classes fill this
+
+        # Popup related context @todo extract to context module
         self.active_popup = None
         self.popup_index = 0
         self.popup_callback = None
+
+        # Input related context @todo extract to context module
+        self.active_input_obj = None
+        self.input_callback = None
+        self.input_validator = None
+
+    def request_input(self, prompt, validator, callback, default=None):
+        """Initializes a non-blocking input session."""
+        self.active_input_obj = InputBox(prompt, default)
+        self.input_validator = validator
+        self.input_callback = callback
+        curses.curs_set(1)  # Show cursor during typing
+
+    def _handle_text_input(self, key):
+        """Processes keystrokes for the active InputBox."""
+        obj = self.active_input_obj
+
+        if key in [10, 13, curses.KEY_ENTER]:
+            # Handle Submission
+            val = obj.buffer.strip()
+            if not val and obj.default is not None:
+                val = obj.default
+
+            is_valid, parsed, err = self.input_validator(val)
+            if is_valid:
+                callback = self.input_callback
+                self.active_input_obj = None
+                curses.curs_set(0)
+                callback(parsed)
+            else:
+                obj.error_msg = err
+
+        elif key in [27]:  # ESC - Cancel
+            self.active_input_obj = None
+            curses.curs_set(0)
+
+        elif key in [curses.KEY_BACKSPACE, 127, 8]:
+            obj.buffer = obj.buffer[:-1]
+
+        elif 32 <= key <= 126:  # Printable characters
+            obj.buffer += chr(key)
 
     def _setup_input_mode(self, stdscr):
         curses.echo()
@@ -36,57 +79,6 @@ class BaseState:
         stdscr.clrtoeol()
         stdscr.addstr(height - 3, 2, display_prompt, curses.color_pair(Color.HEADER))
 
-    def get_input(self, prompt, validation_func, default=None):
-        """Standardized blocking input using a dedicated transient pad."""
-        stdscr = self.app.stdscr
-        self._setup_input_mode(stdscr)
-
-        result_val = None
-        error_msg = ""
-        input_box = InputBox(prompt, default, error_msg)
-
-        # Create a pad for the input area (3 rows high, full width)
-        # Positioned near the bottom of the screen
-        h, w = stdscr.getmaxyx()
-        input_pad_h = 3
-        input_pad = curses.newpad(input_pad_h, w)
-        input_y = h - 4  # 4 lines from bottom
-
-        while True:
-            # Render the rest of the UI (Tables, Timer, etc.)
-            self.render(stdscr)
-
-            # Update and draw the Input Box pad
-            input_box.error_msg = error_msg
-            prompt_len = input_box.draw(input_pad, input_pad_h, w)
-
-            # Refresh the input pad onto the screen
-            input_pad.noutrefresh(0, 0, input_y, 2, input_y + input_pad_h, w - 2)
-
-            # Move physical cursor to the end of the prompt on the screen
-            stdscr.move(input_y + 1, 2 + prompt_len)
-            curses.doupdate()
-
-            try:
-                # getstr() handles the echo and cursor movement
-                raw_input = stdscr.getstr().decode('utf-8').strip()
-
-                if not raw_input and default is not None:
-                    result_val = default
-                    break
-
-                is_valid, parsed_result, err = validation_func(raw_input)
-                if is_valid:
-                    result_val = parsed_result
-                    break
-
-                error_msg = err
-            except Exception:
-                break
-
-        self._restore_input_mode(stdscr)
-        return result_val
-
     def open_popup(self, title, options, callback):
         """Helper to trigger a popup from any child state."""
         self.active_popup = SelectionPopup(title, options)
@@ -95,6 +87,11 @@ class BaseState:
 
     def handle_input(self, key):
         """The 'Template Method' for input handling."""
+        # Input box state logic
+        if self.active_input_obj:
+            self._handle_text_input(key)
+            return
+
         # Popup state logic
         if self.active_popup:
             if key == curses.KEY_UP:
@@ -224,7 +221,13 @@ class MainMenuState(BaseState):
         )
 
     def change_interval_flow(self):
-        new_int = self.get_input("New Interval (sec)", self.app.is_positive_int)
+        self.request_input(
+            "New Interval (sec)",
+            self.app.is_positive_int,
+            self._apply_interval_change
+        )
+
+    def _apply_interval_change(self, new_int):
         if new_int:
             self.app.settings.interval_seconds = new_int
             self.app.save_data()
@@ -234,12 +237,21 @@ class MainMenuState(BaseState):
         if not workout_name:
             return
 
-        # Get input for sets and reps
-        sets = self.get_input(f"Sets for {workout_name}", self.app.is_positive_int, default=1)
-        reps = self.get_input(f"Reps for {workout_name}", self.app.is_positive_int)
-        if sets and reps:
-            self.app.manager.log_progress(workout_name, sets, int(reps))
-            self.app.save_data()
+        # Chain inputs via callbacks @todo - Move this to a context queue
+        self.request_input(
+            f"Sets for {workout_name}",
+            self.app.is_positive_int,
+            lambda sets: self.request_input(
+                f"Reps for {workout_name}",
+                self.app.is_positive_int,
+                lambda reps: self._finalize_log(workout_name, sets, reps)
+            ),
+            default=1
+        )
+
+    def _finalize_log(self, name, sets, reps):
+        self.app.manager.log_progress(name, sets, int(reps))
+        self.app.save_data()
 
     def draw_background(self, h, w):
         # Draw menu options
@@ -251,6 +263,22 @@ class MainMenuState(BaseState):
         # Draw menu footer
         instructions = "ARROWS: Navigate | ENTER: Select | ESC: Exit"
         self.app.bg_pad.addstr(h - 2, (w - len(instructions)) // 2, instructions, curses.color_pair(Color.DIM))
+
+        # Draw Input Overlay if active
+        if self.active_input_obj:
+            # Define the position at the bottom of the pad
+            input_h = 3
+            # Start the input area 3 rows up from the bottom (h - 3)
+            input_y = h - input_h
+            input_x = 2
+            max_input_width = w - 4
+
+            # Clear the area where the input will be drawn to prevent ghosting
+            for i in range(input_h):
+                self.app.bg_pad.addstr(input_y + i, input_x, " " * max_input_width)
+
+            # Draw the input content directly onto the bg_pad
+            self.active_input_obj.draw(self.app.bg_pad, input_y, input_x, max_input_width)
 
     def draw_content(self, h, w):
         """The child only cares about HOW the menu looks."""
