@@ -16,24 +16,16 @@ class BaseState:
         self.options = []  # Child classes fill this
         self.ctx_queue = UIContextQueue()
 
-    def request_input(self, prompt, validator, callback, default=None):
-        """Initializes a non-blocking input session."""
-        ctx = InputContext(prompt, validator, callback, default)
-        self.ctx_queue.add(ctx)
-        curses.curs_set(1)  # Show cursor during typing
-
     def _handle_text_input(self, ctx: InputContext, key: int):
         if key in [10, 13, curses.KEY_ENTER]:
             val = ctx.buffer.strip() or str(ctx.default or "")
             is_valid, parsed, err = ctx.validator(val)
             if is_valid:
-                if not self.ctx_queue.resolve_active(parsed):
-                    curses.curs_set(0)
+                self.ctx_queue.resolve_active(parsed)
             else:
                 ctx.error_msg = err
         elif key == 27:  # ESC - Cancel
             self.ctx_queue.clear()
-            curses.curs_set(0)
 
         elif key in [curses.KEY_BACKSPACE, 127, 8]:
             ctx.buffer = ctx.buffer[:-1]
@@ -132,6 +124,19 @@ class BaseState:
             # Only draw foreground UI when no modal/context is blocking the view
             self.draw_foreground(h, w)
 
+    def post_render(self, stdscr):
+        ctx = self.ctx_queue.active
+
+        if isinstance(ctx, InputContext):
+            # Ensure cursor is visible
+            curses.curs_set(1)
+
+            # Move the hardware cursor to the context's coordinates
+            stdscr.move(ctx.cursor_y, ctx.cursor_x)
+        else:
+            # Hide cursor if no input is active
+            curses.curs_set(0)
+
         # Single physical update
         curses.doupdate()
 
@@ -171,6 +176,9 @@ class BaseState:
         input_y = h - input_h
         input_x = 2
         max_w = w - 4
+
+        # Set the cursor position from the draw method
+        ctx.cursor_y, ctx.cursor_x = input_ui.draw(self.app.bg_pad, input_y, input_x, max_w)
 
         # Draw directly onto the background pad or a dedicated overlay pad
         input_ui.draw(self.app.bg_pad, input_y, input_x, max_w)

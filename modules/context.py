@@ -16,6 +16,8 @@ class InputContext(BaseContext):
     default: Any = None
     buffer: str = ""
     error_msg: Optional[str] = None
+    cursor_y: int = 0
+    cursor_x: int = 0
 
 
 @dataclass

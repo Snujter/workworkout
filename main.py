@@ -61,6 +61,9 @@ class WorkoutApp:
         # Let the current state draw the background/menu
         self.state.render(self.stdscr)
 
+        # Do any cleanup after render (e.g. show cursor for input if needed)
+        self.state.post_render(self.stdscr)
+
     def main_loop(self, stdscr):
         # Initial Curses Setup
         self.stdscr = stdscr
