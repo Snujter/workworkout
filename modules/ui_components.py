@@ -296,6 +296,11 @@ class InputBox:
         self.buffer = ""
         self.error_msg = error_msg
 
+    @property
+    def display_prompt(self) -> str:
+        """The formatted string shown before the user input."""
+        return f"{self.prompt} [{self.default}]: " if self.default else f"{self.prompt}: "
+
     def draw(self, pad, y, x, max_w):
         """Draws the prompt into the provided pad area at specific coordinates."""
         # Draw error message if it exists (on the line above the input)
@@ -304,16 +309,13 @@ class InputBox:
             error_text = f" ERROR: {self.error_msg} "[:max_w]
             pad.addstr(y, x, error_text, curses.color_pair(Color.ALERT))
 
-        # Format and draw the prompt
-        display_prompt = f"{self.prompt} [{self.default}]: " if self.default else f"{self.prompt}: "
-
         # We use y + 1 to place the prompt below the error message line
-        pad.addstr(y + 1, x, display_prompt[:max_w], curses.color_pair(Color.HEADER))
+        pad.addstr(y + 1, x, self.display_prompt[:max_w], curses.color_pair(Color.HEADER))
 
         # Draw the current buffer
         # Calculate how much space is left for the text buffer
-        buffer_x_offset = x + len(display_prompt)
-        remaining_space = max_w - len(display_prompt)
+        buffer_x_offset = x + len(self.display_prompt)
+        remaining_space = max_w - len(self.display_prompt)
 
         if remaining_space > 0:
             # Only draw the part of the buffer that fits on the screen
