@@ -1,6 +1,8 @@
 import time
 from datetime import datetime
 import curses
+
+from modules.context import UIContextQueue, InputContext, PopupContext
 from modules.theme import Color, CURSES_WAITING_TIME_IN_MILLISECONDS
 from modules.ui_components import SelectionPopup, WorkoutTable, TotalsTable, TimerWidget, InputBox
 
@@ -12,107 +14,67 @@ class BaseState:
         self.app = app
         self.selection_index = 0
         self.options = []  # Child classes fill this
-
-        # Popup related context @todo extract to context module
-        self.active_popup = None
-        self.popup_index = 0
-        self.popup_callback = None
-
-        # Input related context @todo extract to context module
-        self.active_input_obj = None
-        self.input_callback = None
-        self.input_validator = None
+        self.ctx_queue = UIContextQueue()
 
     def request_input(self, prompt, validator, callback, default=None):
         """Initializes a non-blocking input session."""
-        self.active_input_obj = InputBox(prompt, default)
-        self.input_validator = validator
-        self.input_callback = callback
+        ctx = InputContext(prompt, validator, callback, default)
+        self.ctx_queue.add(ctx)
         curses.curs_set(1)  # Show cursor during typing
 
-    def _handle_text_input(self, key):
-        """Processes keystrokes for the active InputBox."""
-        obj = self.active_input_obj
-
+    def _handle_text_input(self, ctx: InputContext, key: int):
         if key in [10, 13, curses.KEY_ENTER]:
-            # Handle Submission
-            val = obj.buffer.strip()
-            if not val and obj.default is not None:
-                val = obj.default
-
-            is_valid, parsed, err = self.input_validator(val)
+            val = ctx.buffer.strip() or str(ctx.default or "")
+            is_valid, parsed, err = ctx.validator(val)
             if is_valid:
-                callback = self.input_callback
-                self.active_input_obj = None
-                curses.curs_set(0)
-                callback(parsed)
+                if not self.ctx_queue.resolve_active(parsed):
+                    curses.curs_set(0)
             else:
-                obj.error_msg = err
-
-        elif key in [27]:  # ESC - Cancel
-            self.active_input_obj = None
+                ctx.error_msg = err
+        elif key == 27:  # ESC - Cancel
+            self.ctx_queue.clear()
             curses.curs_set(0)
 
         elif key in [curses.KEY_BACKSPACE, 127, 8]:
-            obj.buffer = obj.buffer[:-1]
+            ctx.buffer = ctx.buffer[:-1]
 
         elif 32 <= key <= 126:  # Printable characters
-            obj.buffer += chr(key)
-
-    def _setup_input_mode(self, stdscr):
-        curses.echo()
-        curses.curs_set(1)
-        stdscr.nodelay(False)
-
-    def _restore_input_mode(self, stdscr):
-        curses.noecho()
-        curses.curs_set(0)
-        stdscr.timeout(CURSES_WAITING_TIME_IN_MILLISECONDS)
-
-    def _draw_input_prompt(self, stdscr, prompt, default, error_msg):
-        height, _ = stdscr.getmaxyx()
-        if error_msg:
-            stdscr.addstr(0, 2, f" ERROR: {error_msg} ", curses.color_pair(Color.ALERT))
-
-        display_prompt = f"{prompt} [{default}]: " if default else f"{prompt}: "
-        stdscr.move(height - 3, 2)
-        stdscr.clrtoeol()
-        stdscr.addstr(height - 3, 2, display_prompt, curses.color_pair(Color.HEADER))
+            ctx.buffer += chr(key)
 
     def open_popup(self, title, options, callback):
         """Helper to trigger a popup from any child state."""
-        self.active_popup = SelectionPopup(title, options)
-        self.popup_index = 0
-        self.popup_callback = callback
+        ctx = PopupContext(title, options, callback)
+        self.ctx_queue.add(ctx)
 
     def handle_input(self, key):
-        """The 'Template Method' for input handling."""
-        # Input box state logic
-        if self.active_input_obj:
-            self._handle_text_input(key)
+        if not self.ctx_queue.active:
+            self._handle_main_navigation(key)
             return
 
-        # Popup state logic
-        if self.active_popup:
-            if key == curses.KEY_UP:
-                self.popup_index = (self.popup_index - 1) % len(self.active_popup.options)
-                self.on_popup_nav()
-            elif key == curses.KEY_DOWN:
-                self.popup_index = (self.popup_index + 1) % len(self.active_popup.options)
-                self.on_popup_nav()
-            elif key in [10, 13, curses.KEY_ENTER]:
-                selection = self.active_popup.options[self.popup_index]
-                callback = self.popup_callback
-                self.active_popup = None  # Close before callback in case callback opens a NEW popup
-                if callback:
-                    callback(selection)
-                self.on_popup_enter()
-            elif key == 27:
-                self.active_popup = None
-                self.on_popup_back()
-            return  # Block main state input
+        ctx = self.ctx_queue.active
 
-        # Other state logic
+        if isinstance(ctx, InputContext):
+            self._handle_text_input(ctx, key)
+        elif isinstance(ctx, PopupContext):
+            self._handle_popup_input(ctx, key)
+
+    def _handle_popup_input(self, ctx: PopupContext, key: int):
+        if key == curses.KEY_UP:
+            ctx.index = (ctx.index - 1) % len(ctx.options)
+            self.on_popup_nav()
+        elif key == curses.KEY_DOWN:
+            ctx.index = (ctx.index + 1) % len(ctx.options)
+            self.on_popup_nav()
+        elif key in [10, 13, curses.KEY_ENTER]:
+            selection = ctx.options[ctx.index]
+            self.ctx_queue.resolve_active(selection)
+            self.on_popup_enter()
+        elif key == 27:
+            self.ctx_queue.clear()
+            self.on_popup_back()
+
+    def _handle_main_navigation(self, key):
+        """Standard menu navigation."""
         if key == curses.KEY_UP:
             self.selection_index = (self.selection_index - 1) % len(self.options)
             self.on_nav()
@@ -121,7 +83,7 @@ class BaseState:
             self.on_nav()
         elif key in [10, 13, curses.KEY_ENTER]:
             self.on_enter()
-        elif key == 27:  # ESC
+        elif key == 27:
             self.on_back()
 
     # --- Hooks for Child Classes ---
@@ -161,9 +123,13 @@ class BaseState:
         self.draw_content(h, w)
 
         # Render overlay
-        if self.active_popup:
-            self.draw_popup(h, w)
+        ctx = self.ctx_queue.active
+        if isinstance(ctx, PopupContext):
+            self.draw_popup(ctx, h, w)
+        elif isinstance(ctx, InputContext):
+            self.draw_input_overlay(ctx, h, w)
         else:
+            # Only draw foreground UI when no modal/context is blocking the view
             self.draw_foreground(h, w)
 
         # Single physical update
@@ -181,16 +147,35 @@ class BaseState:
         """Override for UI elements that should sit above content (tooltips, etc)."""
         pass
 
-    def draw_popup(self, h, w):
-        """Popup."""
-        # Re-use a dedicated popup pad from the app to avoid memory fragmentation
-        p_h, p_w = self.active_popup.height, self.active_popup.width
+    def draw_popup(self, ctx: PopupContext, h, w):
+        """Draws a popup from the context queue."""
+        # Temporarily instantiate the UI component for rendering
+        p_ui = SelectionPopup(ctx.title, ctx.options)
+        p_h, p_w = p_ui.height, p_ui.width
+
         pop_pad = curses.newpad(p_h, p_w)
-        self.active_popup.draw(pop_pad, self.popup_index)
+        # Use the index stored inside the context
+        p_ui.draw(pop_pad, ctx.index)
 
         y = (h - p_h) // 2
         x = (w - p_w) // 2
         pop_pad.noutrefresh(0, 0, y, x, y + p_h, x + p_w)
+
+    def draw_input_overlay(self, ctx: InputContext, h, w):
+        # Temporarily bridge to the UI component
+        input_ui = InputBox(ctx.prompt, ctx.default)
+        input_ui.buffer = ctx.buffer
+        input_ui.error_msg = ctx.error_msg
+
+        input_h = 3
+        input_y = h - input_h
+        input_x = 2
+        max_w = w - 4
+
+        # Draw directly onto the background pad or a dedicated overlay pad
+        input_ui.draw(self.app.bg_pad, input_y, input_x, max_w)
+        # Refresh the specific area where the input was drawn
+        self.app.bg_pad.noutrefresh(input_y, 0, input_y, 0, h - 1, w - 1)
 
 
 class MainMenuState(BaseState):
@@ -213,44 +198,55 @@ class MainMenuState(BaseState):
             self.app.running = False
 
     def log_activity_flow(self):
-        # Open popup
-        self.open_popup(
+        """
+        Defines a linear sequence of events handling logging a new activity.
+        """
+        # Initialize a fresh queue
+        self.ctx_queue = UIContextQueue(on_complete=self._finalize_log)
+
+        # Get the workout
+        self.ctx_queue.add(PopupContext(
             title="Select Workout",
             options=self.app.manager.workouts,
-            callback=self.handle_workout_select_popup
+            key="name"
+        ))
+
+        # Get the sets
+        self.ctx_queue.add(InputContext(
+            prompt="Sets",
+            validator=self.app.is_positive_int,
+            key="sets",
+            default=1
+        ))
+
+        # Get the reps
+        self.ctx_queue.add(InputContext(
+            prompt="Reps",
+            validator=self.app.is_positive_int,
+            key="reps"
+        ))
+
+    def _finalize_log(self, data):
+        """Save data to the workout log."""
+        self.app.manager.log_progress(
+            data["name"],
+            data["sets"],
+            data["reps"]
         )
+        self.app.save_data()
 
     def change_interval_flow(self):
-        self.request_input(
-            "New Interval (sec)",
-            self.app.is_positive_int,
-            self._apply_interval_change
-        )
+        # Initialize a fresh queue
+        self.ctx_queue = UIContextQueue(on_complete=self._apply_interval_change)
 
-    def _apply_interval_change(self, new_int):
-        if new_int:
-            self.app.settings.interval_seconds = new_int
-            self.app.save_data()
+        self.ctx_queue.add(InputContext(
+            prompt="New Interval (sec)",
+            validator=self.app.is_positive_int,
+            key="interval"
+        ))
 
-    def handle_workout_select_popup(self, workout_name: str):
-        # Exit early if no workout was selected
-        if not workout_name:
-            return
-
-        # Chain inputs via callbacks @todo - Move this to a context queue
-        self.request_input(
-            f"Sets for {workout_name}",
-            self.app.is_positive_int,
-            lambda sets: self.request_input(
-                f"Reps for {workout_name}",
-                self.app.is_positive_int,
-                lambda reps: self._finalize_log(workout_name, sets, reps)
-            ),
-            default=1
-        )
-
-    def _finalize_log(self, name, sets, reps):
-        self.app.manager.log_progress(name, sets, int(reps))
+    def _apply_interval_change(self, data):
+        self.app.settings.interval_seconds = int(data['interval'])
         self.app.save_data()
 
     def draw_background(self, h, w):
@@ -263,22 +259,6 @@ class MainMenuState(BaseState):
         # Draw menu footer
         instructions = "ARROWS: Navigate | ENTER: Select | ESC: Exit"
         self.app.bg_pad.addstr(h - 2, (w - len(instructions)) // 2, instructions, curses.color_pair(Color.DIM))
-
-        # Draw Input Overlay if active
-        if self.active_input_obj:
-            # Define the position at the bottom of the pad
-            input_h = 3
-            # Start the input area 3 rows up from the bottom (h - 3)
-            input_y = h - input_h
-            input_x = 2
-            max_input_width = w - 4
-
-            # Clear the area where the input will be drawn to prevent ghosting
-            for i in range(input_h):
-                self.app.bg_pad.addstr(input_y + i, input_x, " " * max_input_width)
-
-            # Draw the input content directly onto the bg_pad
-            self.active_input_obj.draw(self.app.bg_pad, input_y, input_x, max_input_width)
 
     def draw_content(self, h, w):
         """The child only cares about HOW the menu looks."""
