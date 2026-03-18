@@ -3,7 +3,7 @@ from datetime import datetime
 import curses
 
 from modules.context import UIContextQueue, InputContext, PopupContext
-from modules.theme import Color, CURSES_WAITING_TIME_IN_MILLISECONDS
+from modules.theme import Color
 from modules.ui_components import SelectionPopup, WorkoutTable, TotalsTable, TimerWidget, InputBox
 
 
