@@ -261,7 +261,7 @@ class MainMenuState(BaseState):
 
         # Draw menu footer
         instructions = "ARROWS: Navigate | ENTER: Select | ESC: Exit"
-        self.app.bg_pad.addstr(h - 2, (w - len(instructions)) // 2, instructions, curses.color_pair(Color.DIM))
+        self.app.bg_pad.addstr(h - 1, (w - len(instructions)) // 2, instructions, curses.color_pair(Color.DIM))
 
     def draw_content(self, h, w):
         """The child only cares about HOW the menu looks."""
