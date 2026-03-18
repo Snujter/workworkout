@@ -33,11 +33,6 @@ class BaseState:
         elif 32 <= key <= 126:  # Printable characters
             ctx.buffer += chr(key)
 
-    def open_popup(self, title, options, callback):
-        """Helper to trigger a popup from any child state."""
-        ctx = PopupContext(title, options, callback)
-        self.ctx_queue.add(ctx)
-
     def handle_input(self, key):
         if not self.ctx_queue.active:
             self._handle_main_navigation(key)
