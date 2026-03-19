@@ -56,11 +56,6 @@ class WorkoutApp:
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
 
-    def is_positive_int(self, val: str):
-        if str(val).isdigit() and int(val) > 0:
-            return True, int(val), ""
-        return False, None, "Must be a positive integer."
-
     def render_all(self):
         # Let the current state draw the background/menu
         self.state.render(self.stdscr)

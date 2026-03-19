@@ -5,6 +5,7 @@ import curses
 from modules.context import UIContextQueue, InputContext, PopupContext
 from modules.theme import Color
 from modules.ui_components import SelectionPopup, WorkoutTable, TotalsTable, TimerWidget, InputBox
+from modules.validator import is_positive_int
 
 
 class BaseState:
@@ -219,7 +220,7 @@ class MainMenuState(BaseState):
         # Get the sets
         self.ctx_queue.add(InputContext(
             prompt="Sets",
-            validator=self.app.is_positive_int,
+            validator=is_positive_int,
             key="sets",
             default=1
         ))
@@ -227,7 +228,7 @@ class MainMenuState(BaseState):
         # Get the reps
         self.ctx_queue.add(InputContext(
             prompt="Reps",
-            validator=self.app.is_positive_int,
+            validator=is_positive_int,
             key="reps"
         ))
 
@@ -250,7 +251,7 @@ class MainMenuState(BaseState):
 
         self.ctx_queue.add(InputContext(
             prompt="New Interval (sec)",
-            validator=self.app.is_positive_int,
+            validator=is_positive_int,
             key="interval"
         ))
 
