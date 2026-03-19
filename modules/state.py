@@ -250,6 +250,7 @@ class MainMenuState(BaseState):
 
     def _apply_interval_change(self, data):
         self.app.settings.interval_seconds = int(data['interval'])
+        self.app.timer_ctx.interval_seconds = self.app.settings.interval_seconds
         self.app.save_data()
 
     def draw_background(self, h, w):
@@ -272,8 +273,7 @@ class MainMenuState(BaseState):
 
         # Draw timer
         self.app.timer_pad.erase()
-        elapsed = time.time() - self.app.last_alert_time
-        time_left = max(0, int(self.app.settings.interval_seconds - elapsed))
+        time_left = self.app.timer_ctx.get_time_left()
         self.timer_widget.draw(self.app.timer_pad, self.app.settings.interval_seconds, time_left, total_w)
         self.app.timer_pad.noutrefresh(0, 0, 2, start_x, 5, start_x + total_w)
 

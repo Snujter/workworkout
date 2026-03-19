@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import List, Any, Callable, Optional, Dict
 from abc import ABC
@@ -61,3 +62,39 @@ class UIContextQueue:
         self.queue = []
         self.active = None
         self.results = {}
+
+
+class TimerContext:
+    def __init__(self, interval_seconds):
+        self.interval_seconds: int = interval_seconds
+        self.last_alert_time = time.time()
+        self.is_paused: bool = False
+        self.elapsed_at_pause: int = 0
+
+    def get_elapsed(self):
+        if self.is_paused:
+            return self.elapsed_at_pause
+        return time.time() - self.last_alert_time
+
+    def get_time_left(self):
+        elapsed = self.get_elapsed()
+        return max(0, int(self.interval_seconds - elapsed))
+
+    def check_trigger(self, on_expire: Callable[[], None]=None):
+        if self.is_paused:
+            return False
+
+        if self.get_elapsed() >= self.interval_seconds:
+            # Handle any callbacks on expiration
+            if callable(on_expire):
+                on_expire()
+
+            # Reset the internal anchor
+            self.reset()
+            return True
+        return False
+
+    def reset(self):
+        """Resets the anchor to the current time."""
+        self.last_alert_time = time.time()
+        self.elapsed_at_pause = 0

@@ -2,6 +2,8 @@ import curses
 import time
 import json
 import os
+
+from modules.context import TimerContext
 from modules.models import Settings, WorkoutManager
 from modules.theme import Color, CURSES_ESC_DELAY_TIME, CURSES_WAITING_TIME_IN_MILLISECONDS
 from modules.state import MainMenuState
@@ -16,7 +18,6 @@ class WorkoutApp:
     def __init__(self):
         os.environ.setdefault('ESCDELAY', CURSES_ESC_DELAY_TIME)
         self.running = True
-        self.last_alert_time = time.time()
         self.stdscr = None
 
         # Define pads
@@ -31,6 +32,9 @@ class WorkoutApp:
 
         # Load persisted data
         self.load_data()
+
+        # Create timer context from populated settings data
+        self.timer_ctx = TimerContext(interval_seconds=self.settings.interval_seconds)
 
         # State Management
         self.state = MainMenuState(self)
@@ -64,6 +68,9 @@ class WorkoutApp:
         # Do any cleanup after render (e.g. show cursor for input if needed)
         self.state.post_render(self.stdscr)
 
+    def handle_timer_expiration(self):
+        print("\a", end="", flush=True)
+
     def main_loop(self, stdscr):
         # Initial Curses Setup
         self.stdscr = stdscr
@@ -83,9 +90,7 @@ class WorkoutApp:
             self.render_all()
 
             # Timer Alert Logic
-            if (time.time() - self.last_alert_time) >= self.settings.interval_seconds:
-                print("\a", end="", flush=True)
-                self.last_alert_time = time.time()
+            self.timer_ctx.check_trigger(on_expire=self.handle_timer_expiration)
 
             # Wait for input
             key = stdscr.getch()
