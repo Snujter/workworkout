@@ -94,6 +94,15 @@ class TimerContext:
             return True
         return False
 
+    def toggle_pause(self):
+        if not self.is_paused:
+            self.elapsed_at_pause = time.time() - self.last_alert_time
+            self.is_paused = True
+        else:
+            # Shift the start time forward by the frozen duration
+            self.last_alert_time = time.time() - self.elapsed_at_pause
+            self.is_paused = False
+
     def reset(self):
         """Resets the anchor to the current time."""
         self.last_alert_time = time.time()

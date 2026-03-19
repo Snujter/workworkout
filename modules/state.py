@@ -184,7 +184,7 @@ class BaseState:
 class MainMenuState(BaseState):
     def __init__(self, app):
         super().__init__(app)
-        self.options = ["Log Activity", "Change Interval", "Settings", "Exit"]
+        self.options = ["Log Activity", "Change Interval", "Pause Timer", "Exit"]
 
         # UI Components
         self.table = WorkoutTable()
@@ -197,6 +197,8 @@ class MainMenuState(BaseState):
             self.log_activity_flow()
         elif self.selection_index == 1:
             self.change_interval_flow()
+        elif self.selection_index == 2:
+            self.toggle_timer_flow()
         elif self.selection_index == 3:
             self.app.running = False
 
@@ -237,6 +239,10 @@ class MainMenuState(BaseState):
             data["reps"]
         )
         self.app.save_data()
+
+    def toggle_timer_flow(self):
+        """Toggle if the timer has been paused or not."""
+        self.app.timer_ctx.toggle_pause()
 
     def change_interval_flow(self):
         # Initialize a fresh queue
