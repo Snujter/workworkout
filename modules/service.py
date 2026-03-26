@@ -10,7 +10,7 @@ class SoundService:
     Not a 'Context' as it doesn't represent a UI state.
     """
 
-    def __init__(self, directory: str = "sounds"):
+    def __init__(self, directory: str = "sounds/space_marine"):
         # Using Path objects is more modern and safer than os.path
         self.directory = Path(directory)
 

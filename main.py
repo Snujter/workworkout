@@ -4,6 +4,7 @@ import os
 
 from modules.context import TimerContext
 from modules.models import Settings, WorkoutManager
+from modules.service import SoundService
 from modules.theme import Color, CURSES_ESC_DELAY_TIME, CURSES_WAITING_TIME_IN_MILLISECONDS
 from modules.state import MainMenuState
 
@@ -37,6 +38,7 @@ class WorkoutApp:
 
         # State Management
         self.state = MainMenuState(self)
+        self.sound_service = SoundService()
 
     def load_data(self):
         if os.path.exists(DATA_FILE):
@@ -63,7 +65,9 @@ class WorkoutApp:
         self.state.post_render(self.stdscr)
 
     def handle_timer_expiration(self):
-        print("\a", end="", flush=True)
+        self.sound_service.play_random()
+
+        return None
 
     def main_loop(self, stdscr):
         # Initial Curses Setup
