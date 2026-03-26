@@ -60,5 +60,5 @@ ENV/
 
 # Application-specific data
 workout_data.json
-*.mp3
-*.wav
+#*.mp3
+#*.wav
