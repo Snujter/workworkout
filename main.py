@@ -1,6 +1,7 @@
 import curses
 import json
 import os
+import uuid
 
 from modules.context import TimerContext
 from modules.models import Settings, WorkoutManager
@@ -48,7 +49,10 @@ class WorkoutApp:
                 if "settings" in raw:
                     self.settings.interval_seconds = raw["settings"].get("interval_seconds", 30)
                 if "workouts" in raw:
-                    self.manager.workouts = raw["workouts"]
+                    self.manager.workouts = [
+                        w if isinstance(w, dict) else {"id": str(uuid.uuid4()), "name": w}
+                        for w in raw["workouts"]
+                    ]
                 if "history" in raw:
                     self.manager.history = raw["history"]
 

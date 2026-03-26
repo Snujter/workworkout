@@ -212,7 +212,7 @@ class MainMenuState(BaseState):
         # Get the workout
         self.ctx_queue.add(PopupContext(
             title="Select Workout",
-            options=self.app.manager.workouts,
+            options=[workout["name"] for workout in self.app.manager.workouts],
             key="name"
         ))
 
